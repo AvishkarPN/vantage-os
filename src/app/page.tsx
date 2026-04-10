@@ -106,6 +106,58 @@ function PhasePipeline({ current }: { current: MitigationPhase }) {
   );
 }
 
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+
+function MainSidebar({ systemStatus }: { systemStatus: string }) {
+  return (
+    <>
+      {/* Desktop Rail */}
+      <aside className="fixed left-0 top-0 bottom-0 w-16 border-r border-white/5 bg-background hidden lg:flex flex-col items-center py-6 gap-7 z-50">
+        <Link href="/">
+          <div className="w-8 h-8 bg-primary flex items-center justify-center shrink-0 cursor-pointer hover:bg-primary/80 transition-colors">
+            <span className="font-mono font-bold text-background text-[9px] tracking-tight">VOS</span>
+          </div>
+        </Link>
+        <nav className="flex flex-col items-center gap-6 flex-1 text-muted-foreground">
+          <Link href="/" className="hover:text-primary transition-colors">
+            <Radio className="w-5 h-5 text-primary" />
+          </Link>
+          <Link href="/staff" className="opacity-30 hover:opacity-100 transition-opacity">
+            <Users className="w-5 h-5" />
+          </Link>
+          <Link href="/resources" className="opacity-30 hover:opacity-100 transition-opacity">
+            <Package className="w-5 h-5" />
+          </Link>
+          <Link href="/reports" className="opacity-30 hover:opacity-100 transition-opacity">
+            <Activity className="w-5 h-5" />
+          </Link>
+        </nav>
+        <div className={`w-2 h-2 rounded-full shrink-0 ${systemStatus === 'NOMINAL' ? 'bg-primary' : 'bg-destructive animate-pulse'}`} />
+      </aside>
+
+      {/* Mobile Bottom Tab Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-background border-t border-white/10 flex lg:hidden items-center justify-around z-50 px-4 pb-1">
+        <Link href="/" className="flex flex-col items-center gap-1 text-primary">
+          <Radio className="w-5 h-5" />
+          <span className="text-[8px] font-mono uppercase font-bold tracking-tighter">Control</span>
+        </Link>
+        <Link href="/staff" className="flex flex-col items-center gap-1 text-muted-foreground">
+          <Users className="w-5 h-5" />
+          <span className="text-[8px] font-mono uppercase font-bold tracking-tighter">Staff</span>
+        </Link>
+        <Link href="/resources" className="flex flex-col items-center gap-1 text-muted-foreground">
+          <Package className="w-5 h-5" />
+          <span className="text-[8px] font-mono uppercase font-bold tracking-tighter">Logistics</span>
+        </Link>
+        <Link href="/reports" className="flex flex-col items-center gap-1 text-muted-foreground">
+          <Activity className="w-5 h-5" />
+          <span className="text-[8px] font-mono uppercase font-bold tracking-tighter">Reports</span>
+        </Link>
+      </nav>
+    </>
+  );
+}
+
 // ─── RedistributionSummary ────────────────────────────────────────────────────
 
 function RedistributionSummaryCard({ phase, result }: { phase: MitigationPhase; result: MitigationResult | null }) {
@@ -717,45 +769,21 @@ export default function TacticalNocDashboard() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ paddingLeft: '64px' }}>
-
-      {/* ── ICON RAIL ────────────────────────────────────────────── */}
-      <aside className="fixed left-0 top-0 bottom-0 w-16 border-r border-white/5 bg-background flex flex-col items-center py-6 gap-7 z-50">
-        <Link href="/">
-          <div className="w-8 h-8 bg-primary flex items-center justify-center shrink-0 cursor-pointer hover:bg-primary/80 transition-colors">
-            <span className="font-mono font-bold text-background text-[9px] tracking-tight">VOS</span>
-          </div>
-        </Link>
-        <nav className="flex flex-col items-center gap-6 flex-1 text-muted-foreground">
-          <div className="relative w-full flex justify-center">
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary" />
-            <Radio className="w-5 h-5 text-primary" />
-          </div>
-          <Link href="/staff" className="opacity-30 hover:opacity-80 transition-opacity">
-            <Users className="w-5 h-5" />
-          </Link>
-          <Link href="/resources" className="opacity-30 hover:opacity-80 transition-opacity">
-            <Package className="w-5 h-5" />
-          </Link>
-          <Link href="/reports" className="opacity-30 hover:opacity-80 transition-opacity">
-            <Activity className="w-5 h-5" />
-          </Link>
-        </nav>
-        <div className={`w-2 h-2 rounded-full shrink-0 ${systemStatus === 'NOMINAL' ? 'bg-primary' : 'bg-destructive animate-pulse'}`} />
-      </aside>
+    <div className="min-h-screen flex flex-col lg:flex-row bg-background lg:pl-16">
+      <MainSidebar systemStatus={systemStatus} />
 
       {/* ── MAIN STAGE ───────────────────────────────────────────── */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden pb-14 lg:pb-0">
 
         {/* CENTER */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
-          <header className="flex justify-between items-center px-8 py-4 border-b border-white/5 shrink-0">
+          <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 md:px-8 py-4 border-b border-white/5 shrink-0 gap-4">
             <div>
-              <h1 className="text-base font-sans tracking-[0.2em] uppercase font-semibold text-foreground">
+              <h1 className="text-sm md:text-base font-sans tracking-[0.2em] uppercase font-semibold text-foreground">
                 Live Control Center
               </h1>
-              <p className="text-[10px] font-mono text-muted-foreground mt-0.5 tracking-widest">
+              <p className="text-[9px] md:text-[10px] font-mono text-muted-foreground mt-0.5 tracking-widest">
                 VANTAGE_OS // CORE SECTOR //
                 <span className={`ml-2 font-bold ${systemStatus === 'NOMINAL' ? 'text-primary' : 'text-destructive'}`}>
                   {systemStatus}
@@ -767,9 +795,9 @@ export default function TacticalNocDashboard() {
                 )}
               </p>
             </div>
-            <div className="text-right flex items-center gap-6">
-              <div className="flex flex-col items-end border-r border-white/5 pr-6">
-                 <span className="text-[10px] font-sans text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+            <div className="w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:justify-end gap-6 border-t sm:border-t-0 border-white/5 pt-4 sm:pt-0">
+              <div className="flex flex-col items-start sm:items-end sm:border-r border-white/5 sm:pr-6">
+                 <span className="text-[9px] md:text-[10px] font-sans text-muted-foreground uppercase tracking-widest flex items-center gap-2">
                   <UserIcon className="w-2.5 h-2.5" />
                   Operator: {userName}
                 </span>
@@ -778,33 +806,31 @@ export default function TacticalNocDashboard() {
                   className="text-[9px] font-mono text-destructive hover:text-destructive/80 uppercase mt-1 flex items-center gap-1"
                 >
                   <LogOut className="w-2.5 h-2.5" />
-                  [ TERMINATE_SESS ]
+                  [ TERM_SESS ]
                 </button>
               </div>
-              <div>
-                <span className="text-[10px] font-sans text-muted-foreground uppercase tracking-widest block mb-1">
+              <div className="hidden xs:block">
+                <span className="text-[9px] md:text-[10px] font-sans text-muted-foreground uppercase tracking-widest block mb-1">
                   SYNCED — UTC+5:30
                 </span>
                 {currentTime && (
-                  <span className="text-sm font-mono text-primary flex items-center justify-end gap-2">
+                  <span className="text-xs md:text-sm font-mono text-primary flex items-center justify-end gap-2">
                     <span className="w-1.5 h-1.5 bg-primary animate-pulse shrink-0" />
                     {format(currentTime, 'HH:mm:ss')}
-                    <span className="text-muted-foreground text-[10px]">
-                      .{String(currentTime.getMilliseconds()).padStart(3, '0').slice(0, 2)}
-                    </span>
                   </span>
                 )}
               </div>
             </div>
           </header>
 
+
           {/* Scrollable body */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {/* KPI STRIP */}
-            <div className="grid grid-cols-4 gap-3">
-              <MetricCard title="Total Checked-In" value={totalAttendance} icon={Users} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <MetricCard title="Checked-In" value={totalAttendance} icon={Users} />
               <MetricCard
-                title="Check-in Velocity"
+                title="Velocity"
                 value={checkInVelocity}
                 unit="p/min"
                 icon={Activity}
@@ -812,21 +838,19 @@ export default function TacticalNocDashboard() {
                 flash={velocityFlash}
               />
               <MetricCard title="Active Nodes" value={activeSessions} icon={Cpu} />
-              <MetricCard title="System Status" value={sysValue} icon={sysIcon} status={systemStatus} />
+              <MetricCard title="System" value={sysValue} icon={sysIcon} status={systemStatus} />
             </div>
 
+
             {/* HEATMAP & SECURITY LOGS */}
-            <section className="grid grid-cols-3 gap-6">
-              <div className="col-span-2 space-y-6">
+            <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 space-y-6">
                 <div className="flex justify-between items-center mb-3">
                   <h2 className="text-[10px] font-sans tracking-widest uppercase text-muted-foreground">
                     Venue Floorplan Topology
                   </h2>
-                  <span className="text-[10px] font-mono text-muted-foreground">
-                    Click sector for crowd detail
-                  </span>
                 </div>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                   {rooms.map((room) => (
                     <HeatmapBlock
                       key={room.id}
@@ -842,6 +866,7 @@ export default function TacticalNocDashboard() {
                 <SecurityAuditFeed />
               </div>
             </section>
+
 
             {/* Phase timeline when active — center panel footer */}
             {mitigationPhase !== 'IDLE' && mitigationPhase !== 'MONITORING' && (
@@ -859,7 +884,8 @@ export default function TacticalNocDashboard() {
         </div>
 
         {/* ── RIGHT RAIL ───────────────────────────────────────────── */}
-        <aside className="w-[400px] border-l border-white/5 flex flex-col overflow-hidden shrink-0">
+        <aside className="w-full lg:w-[400px] border-t lg:border-t-0 lg:border-l border-white/5 flex flex-col shrink-0 flex-1 lg:flex-none h-[600px] lg:h-auto">
+
           <div className="px-5 py-4 border-b border-white/5 bg-background shrink-0 flex items-center justify-between">
             <h2 className="text-[10px] font-sans tracking-widest uppercase flex items-center gap-2 text-foreground">
               <ShieldAlert className="w-4 h-4 text-warning" />
