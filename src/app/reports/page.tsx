@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import {
   FileText, Users, Radio, Activity, ServerCrash, Package,
-  Download, Printer, FileJson, Clock, AlertTriangle, ShieldCheck
+  Download, Printer, FileJson, Clock, AlertTriangle, ShieldCheck, ShieldAlert
 } from "lucide-react";
 
 import { useSimulationStore } from "@/store/simulationStore";
 import { useStaffStore, ZONE_CONFIGS, getZoneStatus } from "@/store/staffStore";
 import { useResourceStore } from "@/store/resourceStore";
-import { useAuthStore } from "@/store/v2/authStore";
+import { useAuthStore, hasPermission } from "@/store/v2/authStore";
 import { recordExport } from "@/actions/dbActions";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -77,15 +77,33 @@ function exportCSV(headers: string[], rows: any[][], prefix: string) {
 // ─── Reports Page ─────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
+  const { userRole, isAuthenticated, logSecurityAction, canExecuteAction, userName } = useAuthStore();
   const simState = useSimulationStore();
   const staffState = useStaffStore();
   const resourceState = useResourceStore();
-  const { logSecurityAction, canExecuteAction, userName } = useAuthStore();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   if (!mounted) return null;
+
+  // ── Route Protection ──
+  if (!isAuthenticated || !hasPermission(userRole, 'reports.read')) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-6">
+        <div className="border border-destructive/20 bg-destructive/5 p-12 text-center panel-enter">
+          <ShieldAlert className="w-12 h-12 text-destructive mx-auto mb-4" />
+          <h1 className="text-xl font-sans uppercase tracking-[0.2em] font-bold text-foreground">Access Forbidden</h1>
+          <p className="text-xs font-mono text-muted-foreground uppercase mt-2 max-w-xs mx-auto">
+            Role [{userRole}] does not have required 'reports.read' permission for this node.
+          </p>
+          <Link href="/" className="inline-block mt-8 px-6 py-2 border border-white/10 hover:border-primary text-[10px] font-mono uppercase transition-colors">
+            Return to Command Center
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   // Snapshot Builders
   const buildLiveSnapshot = () => ({

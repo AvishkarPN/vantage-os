@@ -3,7 +3,42 @@ import { devtools, persist } from 'zustand/middleware';
 
 // ─── Security Schema ─────────────────────────────────────────────────────────
 
-export type UserRole = 'OPERATOR' | 'ADMIN' | 'READ_ONLY';
+export type UserRole = 'ADMIN' | 'OPERATOR' | 'TECHNICAL_STAFF' | 'READ_ONLY';
+
+export type Permission = 
+  | 'dashboard.read' 
+  | 'dashboard.mitigate' 
+  | 'staff.read' 
+  | 'staff.manage' 
+  | 'resources.read' 
+  | 'resources.manage' 
+  | 'reports.read' 
+  | 'reports.export'
+  | 'security.audit';
+
+const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  ADMIN: [
+    'dashboard.read', 'dashboard.mitigate', 
+    'staff.read', 'staff.manage', 
+    'resources.read', 'resources.manage', 
+    'reports.read', 'reports.export',
+    'security.audit'
+  ],
+  OPERATOR: [
+    'dashboard.read', 'dashboard.mitigate', 
+    'staff.read', 'resources.read', 'reports.read'
+  ],
+  TECHNICAL_STAFF: [
+    'dashboard.read'
+  ],
+  READ_ONLY: [
+    'dashboard.read'
+  ]
+};
+
+export function hasPermission(role: UserRole, permission: Permission): boolean {
+  return ROLE_PERMISSIONS[role].includes(permission);
+}
 
 export interface AuditEntry {
   id: string;
@@ -49,7 +84,12 @@ export const useAuthStore = create<AuthState>()(
         lastActionTime: 0,
 
         login: (role) => {
-          const names = { 'ADMIN': 'root_admin', 'OPERATOR': 'op_alpha', 'READ_ONLY': 'guest_viewer' };
+          const names = { 
+            'ADMIN': 'root_admin', 
+            'OPERATOR': 'op_alpha', 
+            'TECHNICAL_STAFF': 'tech_monitor_01', 
+            'READ_ONLY': 'guest_viewer' 
+          };
           set({ 
             isAuthenticated: true, 
             userRole: role, 
@@ -80,8 +120,9 @@ export const useAuthStore = create<AuthState>()(
           const now = Date.now();
           const { lastActionTime, userRole } = get();
           
-          // Role Check
-          if (userRole === 'READ_ONLY') {
+          // Role Check - Only ADMIN and OPERATOR can execute mitigation/actions
+          const allowedRoles: UserRole[] = ['ADMIN', 'OPERATOR'];
+          if (!allowedRoles.includes(userRole)) {
             get().logSecurityAction('UNAUTHORIZED_ACTION_ATTEMPT', 'MEDIUM');
             return false;
           }
