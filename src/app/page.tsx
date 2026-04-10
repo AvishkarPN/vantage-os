@@ -15,6 +15,8 @@ import {
   type MitigationPhase, type MitigationResult,
 } from "@/store/simulationStore";
 import { useResourceStore } from "@/store/resourceStore";
+import { useAuthStore } from "@/store/v2/authStore";
+import { Lock, ShieldCheck, User as UserIcon, LogOut } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -516,6 +518,11 @@ export default function TacticalNocDashboard() {
     advanceToAnalyzing, advanceToRecommending, beginMitigation,
     advanceToRedistributing, advanceToStabilizing, advanceToMonitoring,
   } = useSimulationStore();
+  
+  const { 
+    isAuthenticated, userRole, userName, login, logout, 
+    canExecuteAction, logSecurityAction 
+  } = useAuthStore();
 
   const [mounted, setMounted]       = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
@@ -578,8 +585,13 @@ export default function TacticalNocDashboard() {
   }, [mitigationPhase]);
 
   const handleBeginMitigation = useCallback(() => {
-    beginMitigation();
-  }, [beginMitigation]);
+    if (canExecuteAction()) {
+      logSecurityAction(`MITIGATION_CLICKED: zone_target=HALL_B`, 'HIGH');
+      beginMitigation();
+    } else {
+      console.warn('[SECURITY] Action blocked: insufficient permissions or rate limit.');
+    }
+  }, [beginMitigation, canExecuteAction, logSecurityAction]);
 
   const toggleRoom = useCallback((id: string) => {
     setExpandedRoom((prev) => (prev === id ? null : id));
@@ -596,6 +608,49 @@ export default function TacticalNocDashboard() {
     systemStatus === 'DEGRADED' ? 'WARN' : 'FAIL';
 
   if (!mounted) return null;
+
+  if (!isAuthenticated) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-background p-6">
+        <div className="w-full max-w-sm border border-white/10 bg-[#0d1117] p-8 space-y-6 panel-enter shadow-2xl">
+          <div className="flex flex-col items-center gap-4 mb-2">
+            <div className="w-12 h-12 bg-primary/20 border border-primary flex items-center justify-center">
+              <Lock className="w-6 h-6 text-primary" />
+            </div>
+            <div className="text-center">
+              <h1 className="text-lg font-sans uppercase tracking-[0.2em] font-bold">Access Restricted</h1>
+              <p className="text-[10px] font-mono text-muted-foreground uppercase mt-1">VantageOS // Security Layer v4.1</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <button 
+              onClick={() => login('ADMIN')}
+              className="w-full p-4 border border-white/10 hover:border-primary/50 bg-[#161B22] text-left transition-all group flex justify-between items-center"
+            >
+              <div className="flex flex-col">
+                <span className="text-xs font-sans font-bold group-hover:text-primary transition-colors uppercase tracking-widest">Master Operator</span>
+                <span className="text-[9px] font-mono text-muted-foreground uppercase mt-1">Full Mitigation Clearance</span>
+              </div>
+              <ShieldCheck className="w-4 h-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+            <button 
+              onClick={() => login('OPERATOR')}
+              className="w-full p-4 border border-white/10 hover:border-primary/50 bg-[#161B22] text-left transition-all group flex justify-between items-center"
+            >
+              <div className="flex flex-col">
+                <span className="text-xs font-sans font-bold group-hover:text-primary transition-colors uppercase tracking-widest">Tactical Staff</span>
+                <span className="text-[9px] font-mono text-muted-foreground uppercase mt-1">Standard NOC Permissions</span>
+              </div>
+              <Activity className="w-4 h-4 text-warning opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          </div>
+          <p className="text-[10px] text-center text-muted-foreground uppercase tracking-widest pt-2">
+            Secure Session Required
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex overflow-hidden" style={{ paddingLeft: '64px' }}>
@@ -648,19 +703,34 @@ export default function TacticalNocDashboard() {
                 )}
               </p>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] font-sans text-muted-foreground uppercase tracking-widest block mb-1">
-                SYNCED — UTC+5:30
-              </span>
-              {currentTime && (
-                <span className="text-sm font-mono text-primary flex items-center justify-end gap-2">
-                  <span className="w-1.5 h-1.5 bg-primary animate-pulse shrink-0" />
-                  {format(currentTime, 'HH:mm:ss')}
-                  <span className="text-muted-foreground text-[10px]">
-                    .{String(currentTime.getMilliseconds()).padStart(3, '0').slice(0, 2)}
-                  </span>
+            <div className="text-right flex items-center gap-6">
+              <div className="flex flex-col items-end border-r border-white/5 pr-6">
+                 <span className="text-[10px] font-sans text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                  <UserIcon className="w-2.5 h-2.5" />
+                  Operator: {userName}
                 </span>
-              )}
+                <button 
+                  onClick={logout}
+                  className="text-[9px] font-mono text-destructive hover:text-destructive/80 uppercase mt-1 flex items-center gap-1"
+                >
+                  <LogOut className="w-2.5 h-2.5" />
+                  [ TERMINATE_SESS ]
+                </button>
+              </div>
+              <div>
+                <span className="text-[10px] font-sans text-muted-foreground uppercase tracking-widest block mb-1">
+                  SYNCED — UTC+5:30
+                </span>
+                {currentTime && (
+                  <span className="text-sm font-mono text-primary flex items-center justify-end gap-2">
+                    <span className="w-1.5 h-1.5 bg-primary animate-pulse shrink-0" />
+                    {format(currentTime, 'HH:mm:ss')}
+                    <span className="text-muted-foreground text-[10px]">
+                      .{String(currentTime.getMilliseconds()).padStart(3, '0').slice(0, 2)}
+                    </span>
+                  </span>
+                )}
+              </div>
             </div>
           </header>
 
