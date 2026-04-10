@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   Users, Radio, Activity, ServerCrash,
   AlertTriangle, CheckCircle2, ArrowLeftRight,
@@ -13,8 +13,6 @@ import {
   getZoneStatus, getZoneCount,
   type StaffMember, type StaffStatus, type AssignmentZone,
 } from "@/store/staffStore";
-import { useAuthStore, hasPermission } from "@/store/v2/authStore";
-import { Lock, ShieldAlert } from "lucide-react";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -230,7 +228,6 @@ function StaffRow({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StaffPage() {
-  const { userRole, isAuthenticated } = useAuthStore();
   const {
     staff, swapSourceId,
     assignStaff, unassignStaff, setStaffStatus,
@@ -240,29 +237,6 @@ export default function StaffPage() {
   const [filterStatus, setFilterStatus] = useState<StaffStatus | 'all'>('all');
   const [filterZone,   setFilterZone]   = useState<AssignmentZone | 'all'>('all');
   const [search,       setSearch]       = useState('');
-
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  if (!mounted) return null;
-
-  // ── Route Protection ──
-  if (!isAuthenticated || !hasPermission(userRole, 'staff.read')) {
-    return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-6">
-        <div className="border border-destructive/20 bg-destructive/5 p-12 text-center panel-enter">
-          <ShieldAlert className="w-12 h-12 text-destructive mx-auto mb-4" />
-          <h1 className="text-xl font-sans uppercase tracking-[0.2em] font-bold text-foreground">Access Forbidden</h1>
-          <p className="text-xs font-mono text-muted-foreground uppercase mt-2 max-w-xs mx-auto">
-            Role [{userRole}] does not have required 'staff.read' permission for this node.
-          </p>
-          <Link href="/" className="inline-block mt-8 px-6 py-2 border border-white/10 hover:border-primary text-[10px] font-mono uppercase transition-colors">
-            Return to Command Center
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   const filtered = useMemo(() => {
     return staff.filter((s) => {

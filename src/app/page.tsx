@@ -15,8 +15,8 @@ import {
   type MitigationPhase, type MitigationResult,
 } from "@/store/simulationStore";
 import { useResourceStore } from "@/store/resourceStore";
-import { useAuthStore, hasPermission } from "@/store/v2/authStore";
-import { Lock, ShieldCheck, User as UserIcon, LogOut, Settings } from "lucide-react";
+import { useAuthStore } from "@/store/v2/authStore";
+import { Lock, ShieldCheck, User as UserIcon, LogOut } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -707,16 +707,6 @@ export default function TacticalNocDashboard() {
               </div>
               <Activity className="w-4 h-4 text-warning opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
-            <button 
-              onClick={() => login('TECHNICAL_STAFF')}
-              className="w-full p-4 border border-white/10 hover:border-primary/50 bg-[#161B22] text-left transition-all group flex justify-between items-center"
-            >
-              <div className="flex flex-col">
-                <span className="text-xs font-sans font-bold group-hover:text-primary transition-colors uppercase tracking-widest">Technical Staff</span>
-                <span className="text-[9px] font-mono text-muted-foreground uppercase mt-1">Dashboard Monitor Only</span>
-              </div>
-              <Settings className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
           </div>
           <p className="text-[10px] text-center text-muted-foreground uppercase tracking-widest pt-2">
             Secure Session Required
@@ -741,21 +731,15 @@ export default function TacticalNocDashboard() {
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary" />
             <Radio className="w-5 h-5 text-primary" />
           </div>
-          {hasPermission(userRole, 'staff.read') && (
-            <Link href="/staff" className="opacity-30 hover:opacity-80 transition-opacity">
-              <Users className="w-5 h-5" />
-            </Link>
-          )}
-          {hasPermission(userRole, 'resources.read') && (
-            <Link href="/resources" className="opacity-30 hover:opacity-80 transition-opacity">
-              <Package className="w-5 h-5" />
-            </Link>
-          )}
-          {hasPermission(userRole, 'reports.read') && (
-            <Link href="/reports" className="opacity-30 hover:opacity-80 transition-opacity">
-              <Activity className="w-5 h-5" />
-            </Link>
-          )}
+          <Link href="/staff" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Users className="w-5 h-5" />
+          </Link>
+          <Link href="/resources" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Package className="w-5 h-5" />
+          </Link>
+          <Link href="/reports" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Activity className="w-5 h-5" />
+          </Link>
         </nav>
         <div className={`w-2 h-2 rounded-full shrink-0 ${systemStatus === 'NOMINAL' ? 'bg-primary' : 'bg-destructive animate-pulse'}`} />
       </aside>
@@ -855,14 +839,7 @@ export default function TacticalNocDashboard() {
                 </div>
               </div>
               <div className="col-span-1">
-                {hasPermission(userRole, 'security.audit') ? (
-                  <SecurityAuditFeed />
-                ) : (
-                  <div className="border border-white/5 bg-[#0d1117] p-8 h-full flex flex-col items-center justify-center text-center opacity-30">
-                    <Shield className="w-8 h-8 text-muted-foreground mb-3" />
-                    <p className="text-[10px] font-mono uppercase tracking-widest">Master Security Feed<br/>[OFFLINE_FOR_ROLE]</p>
-                  </div>
-                )}
+                <SecurityAuditFeed />
               </div>
             </section>
 
