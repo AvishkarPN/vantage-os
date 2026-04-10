@@ -188,44 +188,64 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     set((state) => {
       const phase = state.mitigationPhase;
       const now = Date.now();
+      const noise = (val: number, delta: number) => Math.max(0, val + Math.floor((Math.random() - 0.5) * delta));
 
-      // Post-monitoring: soft alive fluctuations across all zones
-      if (phase === 'MONITORING') {
-        const noise = (n: number, range: number) =>
-          Math.max(0, n + Math.floor((Math.random() - 0.5) * range * 2));
-
+      // ── NOMINAL / MONITORING ──────────────────────────────────────────────
+      if (phase === 'IDLE' || phase === 'MONITORING') {
         const newRooms = state.rooms.map((room) => {
           let occ = room.currentOccupancy;
-          if (room.id === 'R1') occ = noise(occ, 3);      // Main Stage: gentle variance
-          if (room.id === 'R2') occ = noise(occ, 4);      // Hall A: still slightly elevated
-          if (room.id === 'R3') occ = noise(occ, 2);      // Hall B: low, quiet
-          if (room.id === 'R4') occ = noise(occ, 3);      // Expo: minor variance
+          let q = room.queueLength;
+          let w = room.waitingExternal;
+
+          // Increase raw attendance interest
+          const flowIn = Math.floor(Math.random() * 3);
+          
+          // Logic: If room is near 90% capacity, people start entering the queue first
+          if (occ >= room.capacity * 0.9) {
+            q += flowIn;
+          } else {
+            occ += flowIn;
+          }
+
+          // Logic: Queues slowly drain into occupancy
+          const drain = q > 0 ? Math.min(q, Math.floor(Math.random() * 2) + 1) : 0;
+          if (occ + drain <= room.capacity) {
+            occ += drain;
+            q -= drain;
+          }
+
+          // Simple saturation: if queue is also massive (>20), people wait external
+          if (q > 25) {
+             const overflow = q - 25;
+             w += overflow;
+             q = 25;
+          }
+
+          // Small organic variations
+          occ = noise(occ, 3);
           occ = Math.min(occ, room.capacity);
+
           return {
             ...room,
             currentOccupancy: occ,
+            queueLength: q,
+            waitingExternal: w,
             history: [...room.history, { value: occ, timestamp: now }].slice(-12),
           };
         });
 
-        const passiveLogs = [
-          'Heartbeat OK — all 14 nodes responding',
-          'Attendance delta: +1',
-          'Spatial model refreshed',
-          'Gate velocity: nominal',
-          'Queue length: 0 across all sectors',
-        ];
-        const randomLog = passiveLogs[Math.floor(Math.random() * passiveLogs.length)];
-
         return {
-          totalAttendance: state.totalAttendance + Math.floor(Math.random() * 2),
+          totalAttendance: state.totalAttendance + Math.floor(Math.random() * 3),
           checkInVelocity: Math.max(38, Math.min(52, state.checkInVelocity + Math.floor((Math.random() - 0.5) * 6))),
           rooms: newRooms,
-          logLines: appendLog(state.logLines, makeLog(randomLog, 'OS')),
+          // Only log flow sync occasionally (1 in 8 ticks) to reduce chatter
+          logLines: Math.random() > 0.85 
+            ? appendLog(state.logLines, makeLog('Spatial flow synchronized — queues updating', 'OS'))
+            : state.logLines,
         };
       }
 
-      // During REDISTRIBUTING phase: velocity still declining
+      // During REDISTRIBUTING/STABILIZING: velocity still declining
       if (phase === 'REDISTRIBUTING' || phase === 'STABILIZING') {
         return {
           checkInVelocity: Math.max(60, state.checkInVelocity - 15),
@@ -233,42 +253,25 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         };
       }
 
-      // During / after surge (but before mitigation click): frozen except velocity
+      // ── SURGE ACTIVE (DETECTED -> EXECUTING) ──────────────────────────────
       if (phase === 'DETECTED' || phase === 'ANALYZING' || phase === 'RECOMMENDING' || phase === 'EXECUTING') {
-        // Attendance still ticking, velocity spiked
+        const newRooms = state.rooms.map((room) => {
+          if (room.id === 'R3') { // Hall B is spiking
+            let q = room.queueLength + Math.floor(Math.random() * 4);
+            let w = room.waitingExternal + Math.floor(Math.random() * 2);
+            return { ...room, queueLength: q, waitingExternal: w };
+          }
+          return room;
+        });
+
         return {
-          totalAttendance: state.totalAttendance + Math.floor(Math.random() * 3),
+          totalAttendance: state.totalAttendance + Math.floor(Math.random() * 5),
+          rooms: newRooms,
           logLines: state.logLines,
         };
       }
 
-      // IDLE / nominal: organic growth
-      const newAttendance = state.totalAttendance + Math.floor(Math.random() * 3);
-      const newRooms = state.rooms.map((room) => {
-        if (room.id === 'R4' || room.id === 'R1') {
-          const newOcc = room.currentOccupancy + Math.floor(Math.random() * 2);
-          return {
-            ...room,
-            currentOccupancy: newOcc,
-            history: [...room.history, { value: newOcc, timestamp: now }].slice(-12),
-          };
-        }
-        return room;
-      });
-
-      const passiveLogs = [
-        'Heartbeat OK — all 14 nodes responding',
-        'Ticket scanner subnet latency: 3ms',
-        `Attendance delta: +${Math.floor(Math.random() * 3) + 1}`,
-        'Spatial model refreshed',
-      ];
-      const randomLog = passiveLogs[Math.floor(Math.random() * passiveLogs.length)];
-
-      return {
-        totalAttendance: newAttendance,
-        rooms: newRooms,
-        logLines: appendLog(state.logLines, makeLog(randomLog, 'OS')),
-      };
+      return state;
     });
   },
 

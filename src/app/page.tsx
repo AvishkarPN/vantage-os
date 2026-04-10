@@ -7,7 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity, Users, AlertTriangle, Radio, Cpu, ShieldAlert,
   CheckCircle2, GitMerge, ServerCrash, ChevronDown, ChevronUp,
-  Zap, ArrowRight, Clock, TrendingDown, Package
+  Zap, ArrowRight, Clock, TrendingDown, Package, Shield
 } from "lucide-react";
 import {
   useSimulationStore,
@@ -109,48 +109,113 @@ function PhasePipeline({ current }: { current: MitigationPhase }) {
 // ─── RedistributionSummary ────────────────────────────────────────────────────
 
 function RedistributionSummaryCard({ phase, result }: { phase: MitigationPhase; result: MitigationResult | null }) {
+  const { rooms } = useSimulationStore();
   const showRedistrib = ['REDISTRIBUTING', 'STABILIZING', 'MONITORING'].includes(phase);
   if (!showRedistrib) return null;
 
-  const r = result?.redistribution;
-  const rows = r ? [
-    { label: 'Moved → Hall A',        value: `${r.movedToHallA} attendees`,   color: 'text-primary' },
-    { label: 'Moved → Expo Floor',    value: `${r.movedToExpo} attendees`,    color: 'text-primary' },
-    { label: 'Moved → Main Stage',    value: `${r.movedToMainStage} attendees`, color: 'text-primary' },
-    { label: 'Held in queue',         value: `${r.heldInQueue} attendees`,    color: 'text-warning' },
-    { label: 'Awaiting slot release', value: `${r.awaitingSlot} pending`,     color: 'text-warning' },
-    { label: 'Staff reassigned',      value: `${r.staffReassigned} ushers`,   color: 'text-muted-foreground' },
-    { label: 'Notifications sent',    value: `${r.notificationsSent} via app`, color: 'text-muted-foreground' },
-  ] : [
-    { label: 'Routing 46 → Hall A',     value: 'in progress…', color: 'text-warning' },
-    { label: 'Routing 28 → Expo Floor', value: 'in progress…', color: 'text-warning' },
-    { label: '19 in holding queue',     value: 'draining…',    color: 'text-warning' },
+  const hallA = rooms.find(r => r.id === 'R2');
+  const expo  = rooms.find(r => r.id === 'R4');
+  const hallB = rooms.find(r => r.id === 'R3');
+
+  const rows = [
+    { 
+      label: 'Hall A Occupancy', 
+      value: `${hallA?.currentOccupancy || 0} / ${hallA?.capacity || 0}`, 
+      color: (hallA?.currentOccupancy || 0) > 250 ? 'text-warning' : 'text-primary',
+      live: true 
+    },
+    { 
+      label: 'Expo Floor Load', 
+      value: `${expo?.currentOccupancy || 0} / ${expo?.capacity || 0}`, 
+      color: 'text-primary',
+      live: true 
+    },
+    { 
+      label: 'Hall B Backlog', 
+      value: `${hallB?.queueLength || 0} in queue`, 
+      color: (hallB?.queueLength || 0) > 0 ? 'text-warning' : 'text-muted-foreground',
+      live: true 
+    },
+    { 
+      label: 'Rerouted (Total)', 
+      value: `${hallB?.rerouted || 0} attendees`, 
+      color: 'text-primary',
+      live: true 
+    },
   ];
 
   return (
     <div className="mt-3 border border-white/5 bg-[#0d1117] p-3 alert-enter">
-      <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-2 flex items-center gap-1">
-        <ArrowRight className="w-3 h-3 text-primary" />
-        Redistribution Map
-      </p>
+      <div className="flex justify-between items-center mb-2">
+        <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest flex items-center gap-1">
+          <ArrowRight className="w-3 h-3 text-primary" />
+          Live Redistribution Map
+        </p>
+        <span className="text-[8px] font-mono text-primary animate-pulse flex items-center gap-1">
+          <span className="w-1 h-1 bg-primary rounded-full" />
+          LIVE_SYNC
+        </span>
+      </div>
       <div className="space-y-1.5">
-        {rows.map(({ label, value, color }) => (
-          <div key={label} className="flex justify-between items-center">
-            <span className="text-[10px] font-mono text-muted-foreground">{label}</span>
-            <span className={`text-[10px] font-mono font-bold ${color} tabular-nums`}>{value}</span>
+        {rows.map(({ label, value, color, live }) => (
+          <div key={label} className="flex justify-between items-center group">
+            <span className="text-[10px] font-mono text-muted-foreground group-hover:text-foreground/70 transition-colors uppercase">{label}</span>
+            <div className="flex items-center gap-2">
+              {live && <div className="w-1 h-1 bg-primary/40 rounded-full" />}
+              <span className={`text-[10px] font-mono font-bold ${color} tabular-nums`}>{value}</span>
+            </div>
           </div>
         ))}
       </div>
-      {r && (
-        <div className="mt-2 pt-2 border-t border-white/5 flex justify-between items-center">
-          <span className="text-[10px] font-mono text-muted-foreground">Risk change</span>
-          <span className="text-[10px] font-mono flex items-center gap-1">
-            <span className="text-destructive">{r.riskBefore}%</span>
-            <TrendingDown className="w-3 h-3 text-primary" />
-            <span className="text-primary font-bold">{r.riskAfter}%</span>
-          </span>
+    </div>
+  );
+}
+
+function SecurityAuditFeed() {
+  const { auditLogs } = useAuthStore();
+  
+  return (
+    <div className="border border-white/5 bg-[#0d1117] p-4 panel-enter flex flex-col h-full">
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-[10px] font-sans tracking-widest uppercase flex items-center gap-2 text-foreground font-bold">
+          <Shield className="w-4 h-4 text-primary" />
+          Security Persistence Log
+        </h2>
+        <div className="flex items-center gap-1.5">
+          <span className="w-1 h-1 bg-primary rounded-full animate-ping" />
+          <span className="text-[8px] font-mono text-primary uppercase">Recording</span>
         </div>
-      )}
+      </div>
+      
+      <div className="flex-1 space-y-2 overflow-y-auto pr-1">
+        {auditLogs.length === 0 ? (
+          <p className="text-[10px] font-mono text-muted-foreground uppercase py-4">No security events recorded in this session.</p>
+        ) : (
+          auditLogs.map((log) => (
+            <div key={log.id} className="border-l border-white/10 pl-3 py-1 space-y-0.5">
+              <div className="flex justify-between items-center">
+                <span className={`text-[9px] font-mono font-bold ${
+                  log.severity === 'HIGH' ? 'text-destructive' : 
+                  log.severity === 'MEDIUM' ? 'text-warning' : 'text-primary'
+                }`}>
+                  [{log.severity}] {log.action}
+                </span>
+                <span className="text-[8px] font-mono text-white/20">
+                  {format(new Date(log.timestamp), 'HH:mm:ss')}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] font-mono text-muted-foreground uppercase">
+                  Operator: {log.userId}
+                </span>
+                <span className="text-[8px] font-mono text-primary/40">
+                  {log.status}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -585,11 +650,10 @@ export default function TacticalNocDashboard() {
   }, [mitigationPhase]);
 
   const handleBeginMitigation = useCallback(() => {
+    // Only log here. Remove from simulationStore to avoid duplication.
     if (canExecuteAction()) {
-      logSecurityAction(`MITIGATION_CLICKED: zone_target=HALL_B`, 'HIGH');
+      logSecurityAction(`MITIGATION_TRIGGERED: swap_session_hall_b`, 'HIGH');
       beginMitigation();
-    } else {
-      console.warn('[SECURITY] Action blocked: insufficient permissions or rate limit.');
     }
   }, [beginMitigation, canExecuteAction, logSecurityAction]);
 
@@ -751,28 +815,33 @@ export default function TacticalNocDashboard() {
               <MetricCard title="System Status" value={sysValue} icon={sysIcon} status={systemStatus} />
             </div>
 
-            {/* HEATMAP */}
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-[10px] font-sans tracking-widest uppercase text-muted-foreground">
-                  Venue Floorplan Topology
-                </h2>
-                <span className="text-[10px] font-mono text-muted-foreground">
-                  Click sector for crowd detail
-                </span>
+            {/* HEATMAP & SECURITY LOGS */}
+            <section className="grid grid-cols-3 gap-6">
+              <div className="col-span-2 space-y-6">
+                <div className="flex justify-between items-center mb-3">
+                  <h2 className="text-[10px] font-sans tracking-widest uppercase text-muted-foreground">
+                    Venue Floorplan Topology
+                  </h2>
+                  <span className="text-[10px] font-mono text-muted-foreground">
+                    Click sector for crowd detail
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  {rooms.map((room) => (
+                    <HeatmapBlock
+                      key={room.id}
+                      room={room}
+                      isExpanded={expandedRoom === room.id}
+                      onToggle={() => toggleRoom(room.id)}
+                      isMigrating={isMigrating}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {rooms.map((room) => (
-                  <HeatmapBlock
-                    key={room.id}
-                    room={room}
-                    isExpanded={expandedRoom === room.id}
-                    onToggle={() => toggleRoom(room.id)}
-                    isMigrating={isMigrating}
-                  />
-                ))}
+              <div className="col-span-1">
+                <SecurityAuditFeed />
               </div>
-            </div>
+            </section>
 
             {/* Phase timeline when active — center panel footer */}
             {mitigationPhase !== 'IDLE' && mitigationPhase !== 'MONITORING' && (

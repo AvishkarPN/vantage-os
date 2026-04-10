@@ -10,6 +10,7 @@ import {
 import { useSimulationStore } from "@/store/simulationStore";
 import { useStaffStore, ZONE_CONFIGS, getZoneStatus } from "@/store/staffStore";
 import { useResourceStore } from "@/store/resourceStore";
+import { useAuthStore } from "@/store/v2/authStore";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -18,24 +19,58 @@ function formatTimestamp(date: Date) {
 }
 
 function exportJSON(data: any, prefix: string) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `VantageOS_${prefix}_${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `VantageOS_${prefix}_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  } catch (err) {
+    console.error("Export failure [JSON]:", err);
+    alert("CRITICAL_FAIL: Failed to generate JSON report. Check system console.");
+  }
 }
 
 function exportCSV(headers: string[], rows: any[][], prefix: string) {
-  const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `VantageOS_${prefix}_${Date.now()}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    // Escape commas in cells to prevent corruption
+    const escape = (val: any) => {
+      const s = String(val);
+      if (s.includes(",") || s.includes("\"") || s.includes("\n")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    const csvContent = [
+      headers.map(escape).join(","),
+      ...rows.map(r => r.map(escape).join(","))
+    ].join("\r\n");
+
+    // Add UTF-8 BOM so Excel opens it with correct encoding
+    const BOM = "\uFEFF";
+    const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `VantageOS_${prefix}_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  } catch (err) {
+    console.error("Export failure [CSV]:", err);
+    alert("CRITICAL_FAIL: Failed to generate CSV report. Integrity check required.");
+  }
 }
 
 // ─── Reports Page ─────────────────────────────────────────────────────────────
@@ -44,6 +79,7 @@ export default function ReportsPage() {
   const simState = useSimulationStore();
   const staffState = useStaffStore();
   const resourceState = useResourceStore();
+  const { logSecurityAction, canExecuteAction } = useAuthStore();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -67,10 +103,13 @@ export default function ReportsPage() {
   });
 
   const handleExportJSON = () => {
+    if (!canExecuteAction()) return;
     exportJSON(buildLiveSnapshot(), "Live_Snapshot");
+    logSecurityAction("EXPORT_GENERATED: format=JSON", "MEDIUM");
   };
 
   const handleExportCSV = () => {
+    if (!canExecuteAction()) return;
     const headers = ["Zone", "Occupancy (%)", "Queue", "Rerouted", "Staff Status"];
     const rows = simState.rooms.map(r => {
       // @ts-ignore - loose binding for demo
@@ -84,6 +123,7 @@ export default function ReportsPage() {
       ];
     });
     exportCSV(headers, rows, "Zone_Status");
+    logSecurityAction("EXPORT_GENERATED: format=CSV", "MEDIUM");
   };
 
   const handlePrint = () => {
