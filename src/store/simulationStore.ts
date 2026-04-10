@@ -1,12 +1,20 @@
 import { create } from 'zustand';
-import type { LucideIcon } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AlertSeverity = 'INFO' | 'WARNING' | 'CRITICAL' | 'RESOLVED';
-export type RoomStatus = 'NOMINAL' | 'WARNING' | 'CRITICAL';
-export type SystemStatus = 'NOMINAL' | 'DEGRADED' | 'CRITICAL';
-export type MitigationPhase = 'IDLE' | 'PROCESSING' | 'SUCCESS' | 'SETTLED';
+export type AlertSeverity   = 'INFO' | 'WARNING' | 'CRITICAL' | 'RESOLVED';
+export type RoomStatus      = 'NOMINAL' | 'WARNING' | 'CRITICAL';
+export type SystemStatus    = 'NOMINAL' | 'DEGRADED' | 'CRITICAL';
+
+export type MitigationPhase =
+  | 'IDLE'
+  | 'DETECTED'
+  | 'ANALYZING'
+  | 'RECOMMENDING'
+  | 'EXECUTING'
+  | 'REDISTRIBUTING'
+  | 'STABILIZING'
+  | 'MONITORING';
 
 export interface Alert {
   id: string;
@@ -31,6 +39,10 @@ export interface Room {
   staffAssigned: number;
   sessionCount: number;
   history: OccupancySnapshot[];
+  // Crowd state breakdown
+  queueLength: number;
+  waitingExternal: number;
+  rerouted: number;
 }
 
 export interface LogLine {
@@ -40,7 +52,92 @@ export interface LogLine {
   timestamp: number;
 }
 
-// ─── Interface ────────────────────────────────────────────────────────────────
+export interface RedistributionSummary {
+  movedToHallA: number;
+  movedToExpo: number;
+  movedToMainStage: number;
+  heldInQueue: number;
+  awaitingSlot: number;
+  staffReassigned: number;
+  notificationsSent: number;
+  riskBefore: number;
+  riskAfter: number;
+  timeToStabilize: string;
+}
+
+export interface MitigationResult {
+  issue: string;
+  cause: string;
+  actionTaken: string;
+  redistribution: RedistributionSummary;
+  finalOccupancyByZone: Record<string, { name: string; pct: number }>;
+  stabilizedAt: Date;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+let _logCounter = 0;
+function makeLog(text: string, type: LogLine['type']): LogLine {
+  return { id: `L${Date.now()}-${++_logCounter}`, text, type, timestamp: Date.now() };
+}
+
+const LOG_CAP = 50;
+function appendLog(lines: LogLine[], ...next: LogLine[]): LogLine[] {
+  return [...next, ...lines].slice(0, LOG_CAP);
+}
+
+// ─── Initial state ────────────────────────────────────────────────────────────
+
+const INITIAL_ROOMS: Room[] = [
+  {
+    id: 'R1', name: 'Main Stage', capacity: 1500, currentOccupancy: 420,
+    status: 'NOMINAL', staffAssigned: 8, sessionCount: 3,
+    history: [{ value: 380, timestamp: Date.now() - 90000 }, { value: 400, timestamp: Date.now() - 60000 }, { value: 420, timestamp: Date.now() - 30000 }],
+    queueLength: 0, waitingExternal: 0, rerouted: 0,
+  },
+  {
+    id: 'R2', name: 'Hall A', capacity: 300, currentOccupancy: 150,
+    status: 'NOMINAL', staffAssigned: 4, sessionCount: 5,
+    history: [{ value: 110, timestamp: Date.now() - 90000 }, { value: 132, timestamp: Date.now() - 60000 }, { value: 150, timestamp: Date.now() - 30000 }],
+    queueLength: 2, waitingExternal: 0, rerouted: 0,
+  },
+  {
+    id: 'R3', name: 'Hall B', capacity: 120, currentOccupancy: 105,
+    status: 'WARNING', staffAssigned: 2, sessionCount: 2,
+    history: [{ value: 82, timestamp: Date.now() - 90000 }, { value: 95, timestamp: Date.now() - 60000 }, { value: 105, timestamp: Date.now() - 30000 }],
+    queueLength: 4, waitingExternal: 0, rerouted: 0,
+  },
+  {
+    id: 'R4', name: 'Expo Floor', capacity: 800, currentOccupancy: 512,
+    status: 'NOMINAL', staffAssigned: 6, sessionCount: 12,
+    history: [{ value: 460, timestamp: Date.now() - 90000 }, { value: 490, timestamp: Date.now() - 60000 }, { value: 512, timestamp: Date.now() - 30000 }],
+    queueLength: 0, waitingExternal: 0, rerouted: 0,
+  },
+];
+
+const INITIAL_LOGS: LogLine[] = [
+  makeLog('System boot complete — all 14 nodes responding', 'OK'),
+  makeLog('Ticket scanner subnet synced — latency 4ms', 'OS'),
+  makeLog('Spatial density model initialized', 'AI'),
+  makeLog('Attendance tracking active — 1,187 checked in', 'OS'),
+];
+
+// ─── The redistribution constants (deterministic, coherent for demo) ──────────
+
+const REDISTRIB: RedistributionSummary = {
+  movedToHallA:      46,
+  movedToExpo:       28,
+  movedToMainStage:   3,
+  heldInQueue:       19,
+  awaitingSlot:       2,
+  staffReassigned:    2,
+  notificationsSent: 96,
+  riskBefore: 98,
+  riskAfter:   4,
+  timeToStabilize: '3.5s',
+};
+
+// ─── Store interface ──────────────────────────────────────────────────────────
 
 interface SimulationState {
   totalAttendance: number;
@@ -49,61 +146,22 @@ interface SimulationState {
   systemStatus: SystemStatus;
   rooms: Room[];
   alerts: Alert[];
-  threatResolved: boolean;
-  mitigationPhase: MitigationPhase;
   logLines: LogLine[];
+  mitigationPhase: MitigationPhase;
+  mitigationResult: MitigationResult | null;
 
-  // Actions
+  // Simulation actions
   tickSimulation: () => void;
+
+  // Crisis lifecycle
   triggerCriticalSurge: () => void;
+  advanceToAnalyzing: () => void;
+  advanceToRecommending: () => void;
   beginMitigation: () => void;
-  _advanceMitigationToSuccess: () => void;
-  _advanceMitigationToSettled: () => void;
-  pushLog: (text: string, type: LogLine['type']) => void;
+  advanceToRedistributing: () => void;
+  advanceToStabilizing: () => void;
+  advanceToMonitoring: () => void;
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function makeLog(text: string, type: LogLine['type']): LogLine {
-  return { id: `L${Date.now()}-${Math.random()}`, text, type, timestamp: Date.now() };
-}
-
-const LOG_CAP = 40; // max lines in rolling log
-
-function appendLog(lines: LogLine[], next: LogLine): LogLine[] {
-  const updated = [next, ...lines];
-  return updated.slice(0, LOG_CAP);
-}
-
-const INITIAL_ROOMS: Room[] = [
-  {
-    id: 'R1', name: 'Main Stage', capacity: 1500, currentOccupancy: 420,
-    status: 'NOMINAL', staffAssigned: 8, sessionCount: 3,
-    history: [{ value: 380, timestamp: Date.now() - 60000 }],
-  },
-  {
-    id: 'R2', name: 'Hall A', capacity: 300, currentOccupancy: 150,
-    status: 'NOMINAL', staffAssigned: 4, sessionCount: 5,
-    history: [{ value: 120, timestamp: Date.now() - 60000 }],
-  },
-  {
-    id: 'R3', name: 'Hall B', capacity: 120, currentOccupancy: 105,
-    status: 'WARNING', staffAssigned: 2, sessionCount: 2,
-    history: [{ value: 88, timestamp: Date.now() - 60000 }],
-  },
-  {
-    id: 'R4', name: 'Expo Floor', capacity: 800, currentOccupancy: 512,
-    status: 'NOMINAL', staffAssigned: 6, sessionCount: 12,
-    history: [{ value: 480, timestamp: Date.now() - 60000 }],
-  },
-];
-
-const INITIAL_LOGS: LogLine[] = [
-  makeLog('Polling node check vectors... OK', 'OS'),
-  makeLog('Aggregating ticket subnets... OK', 'OS'),
-  makeLog('Analyzing density heuristics... NOMINAL', 'AI'),
-  makeLog('Syncing clock delta (4ms)... OK', 'OS'),
-];
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
@@ -117,34 +175,78 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     {
       id: 'A0',
       severity: 'INFO',
-      message: 'All systems nominal. 1,187 attendees checked in. Network latency 4ms.',
+      message: 'All systems nominal. 1,187 attendees checked in. Spatial model synced.',
       timestamp: new Date(Date.now() - 120000),
     },
   ],
-  threatResolved: false,
-  mitigationPhase: 'IDLE',
   logLines: INITIAL_LOGS,
+  mitigationPhase: 'IDLE',
+  mitigationResult: null,
 
-  pushLog: (text, type) => {
-    set((state) => ({
-      logLines: appendLog(state.logLines, makeLog(text, type)),
-    }));
-  },
-
+  // ── Simulation tick ──────────────────────────────────────────────────────
   tickSimulation: () => {
     set((state) => {
-      if (state.threatResolved) return state;
-
+      const phase = state.mitigationPhase;
       const now = Date.now();
-      const newAttendance = state.totalAttendance + Math.floor(Math.random() * 3);
-      const newVelocity = state.mitigationPhase === 'PROCESSING'
-        ? Math.max(state.checkInVelocity - 8, 120) // starts declining during mitigation
-        : state.checkInVelocity;
 
+      // Post-monitoring: soft alive fluctuations across all zones
+      if (phase === 'MONITORING') {
+        const noise = (n: number, range: number) =>
+          Math.max(0, n + Math.floor((Math.random() - 0.5) * range * 2));
+
+        const newRooms = state.rooms.map((room) => {
+          let occ = room.currentOccupancy;
+          if (room.id === 'R1') occ = noise(occ, 3);      // Main Stage: gentle variance
+          if (room.id === 'R2') occ = noise(occ, 4);      // Hall A: still slightly elevated
+          if (room.id === 'R3') occ = noise(occ, 2);      // Hall B: low, quiet
+          if (room.id === 'R4') occ = noise(occ, 3);      // Expo: minor variance
+          occ = Math.min(occ, room.capacity);
+          return {
+            ...room,
+            currentOccupancy: occ,
+            history: [...room.history, { value: occ, timestamp: now }].slice(-12),
+          };
+        });
+
+        const passiveLogs = [
+          'Heartbeat OK — all 14 nodes responding',
+          'Attendance delta: +1',
+          'Spatial model refreshed',
+          'Gate velocity: nominal',
+          'Queue length: 0 across all sectors',
+        ];
+        const randomLog = passiveLogs[Math.floor(Math.random() * passiveLogs.length)];
+
+        return {
+          totalAttendance: state.totalAttendance + Math.floor(Math.random() * 2),
+          checkInVelocity: Math.max(38, Math.min(52, state.checkInVelocity + Math.floor((Math.random() - 0.5) * 6))),
+          rooms: newRooms,
+          logLines: appendLog(state.logLines, makeLog(randomLog, 'OS')),
+        };
+      }
+
+      // During REDISTRIBUTING phase: velocity still declining
+      if (phase === 'REDISTRIBUTING' || phase === 'STABILIZING') {
+        return {
+          checkInVelocity: Math.max(60, state.checkInVelocity - 15),
+          logLines: state.logLines,
+        };
+      }
+
+      // During / after surge (but before mitigation click): frozen except velocity
+      if (phase === 'DETECTED' || phase === 'ANALYZING' || phase === 'RECOMMENDING' || phase === 'EXECUTING') {
+        // Attendance still ticking, velocity spiked
+        return {
+          totalAttendance: state.totalAttendance + Math.floor(Math.random() * 3),
+          logLines: state.logLines,
+        };
+      }
+
+      // IDLE / nominal: organic growth
+      const newAttendance = state.totalAttendance + Math.floor(Math.random() * 3);
       const newRooms = state.rooms.map((room) => {
         if (room.id === 'R4' || room.id === 'R1') {
-          const bump = Math.floor(Math.random() * 2);
-          const newOcc = room.currentOccupancy + bump;
+          const newOcc = room.currentOccupancy + Math.floor(Math.random() * 2);
           return {
             ...room,
             currentOccupancy: newOcc,
@@ -154,36 +256,36 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         return room;
       });
 
-      // Push a passive OS log line every tick
       const passiveLogs = [
         'Heartbeat OK — all 14 nodes responding',
         'Ticket scanner subnet latency: 3ms',
-        'Attendance delta: +2 in last 1500ms',
+        `Attendance delta: +${Math.floor(Math.random() * 3) + 1}`,
         'Spatial model refreshed',
       ];
       const randomLog = passiveLogs[Math.floor(Math.random() * passiveLogs.length)];
-      const newLog = makeLog(randomLog, 'OS');
 
       return {
         totalAttendance: newAttendance,
-        checkInVelocity: newVelocity,
         rooms: newRooms,
-        logLines: appendLog(state.logLines, newLog),
+        logLines: appendLog(state.logLines, makeLog(randomLog, 'OS')),
       };
     });
   },
 
+  // ── Crisis: DETECTED ─────────────────────────────────────────────────────
   triggerCriticalSurge: () => {
     set((state) => {
-      if (state.threatResolved || state.mitigationPhase !== 'IDLE') return state;
-
+      if (state.mitigationPhase !== 'IDLE') return state;
       const now = Date.now();
+
       const newRooms = state.rooms.map((room) => {
         if (room.id === 'R3') {
           return {
             ...room,
             currentOccupancy: 118,
             status: 'CRITICAL' as const,
+            queueLength: 33,
+            waitingExternal: 22,
             history: [...room.history, { value: 118, timestamp: now }].slice(-12),
           };
         }
@@ -195,95 +297,229 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         severity: 'CRITICAL',
         message: 'PREDICTION: Hall B will breach fire-code capacity in 8 minutes. Registration surge detected at entrance gates 3 & 4.',
         predictedImpact: '+14% fire-code breach likelihood',
-        mitigationAction: 'AUTO-MITIGATE: Swap with Main Stage',
+        mitigationAction: 'AUTO-MITIGATE: SWAP SESSIONS',
         timestamp: new Date(),
       };
 
-      const surgeLog1 = makeLog('[ANOMALY] Density threshold exceeded — Hall B sector', 'AI');
-      const surgeLog2 = makeLog('[WARN] Entry velocity spike: 184/min at gates 3,4', 'WARN');
-
       return {
+        mitigationPhase: 'DETECTED',
         rooms: newRooms,
         checkInVelocity: 184,
         systemStatus: 'DEGRADED',
         alerts: [criticalAlert, ...state.alerts],
-        logLines: appendLog(appendLog(state.logLines, surgeLog2), surgeLog1),
+        logLines: appendLog(
+          state.logLines,
+          makeLog('[ANOMALY] Density threshold exceeded — Hall B sector', 'WARN'),
+          makeLog('[!!] Surge at gates 3 & 4 — velocity: 184/min', 'WARN'),
+          makeLog('Hall B queue exceeds safety threshold: 33 in queue', 'WARN'),
+          makeLog('Predicted fire-code breach in 8 min at current rate', 'AI'),
+        ),
       };
     });
   },
 
+  // ── ANALYZING ────────────────────────────────────────────────────────────
+  advanceToAnalyzing: () => {
+    set((state) => {
+      if (state.mitigationPhase !== 'DETECTED') return state;
+      return {
+        mitigationPhase: 'ANALYZING',
+        logLines: appendLog(
+          state.logLines,
+          makeLog('Analyzing crowd vectors and available capacity...', 'AI'),
+          makeLog('Scanning session schedules for swap candidates...', 'OS'),
+          makeLog('Checking Hall A availability: 150/300 (50%)', 'AI'),
+          makeLog('Checking Expo Floor availability: 512/800 (64%)', 'AI'),
+        ),
+      };
+    });
+  },
+
+  // ── RECOMMENDING ─────────────────────────────────────────────────────────
+  advanceToRecommending: () => {
+    set((state) => {
+      if (state.mitigationPhase !== 'ANALYZING') return state;
+      return {
+        mitigationPhase: 'RECOMMENDING',
+        logLines: appendLog(
+          state.logLines,
+          makeLog('RECOMMENDATION: Swap Hall B → Main Stage (28% headroom)', 'AI'),
+          makeLog('Candidate identified: "AI in Operations Workshop" (120 cap)', 'AI'),
+          makeLog('Distribution plan: Hall A +46 / Expo +28 / Queue 19', 'AI'),
+          makeLog('Awaiting operator confirmation...', 'OS'),
+        ),
+      };
+    });
+  },
+
+  // ── EXECUTING (button click) ──────────────────────────────────────────────
   beginMitigation: () => {
     set((state) => {
-      // Guard: only actionable if IDLE and there is a critical alert with an action
-      if (state.mitigationPhase !== 'IDLE') return state;
-
-      const initLog = makeLog('[OS] EXECUTING SWAP — session_id=HALL_B → MAIN_STAGE', 'AI');
-      const routeLog = makeLog('[OS] Updating attendee routing rules...', 'OS');
-
+      if (state.mitigationPhase !== 'RECOMMENDING') return state;
       return {
-        mitigationPhase: 'PROCESSING',
-        logLines: appendLog(appendLog(state.logLines, routeLog), initLog),
+        mitigationPhase: 'EXECUTING',
+        logLines: appendLog(
+          state.logLines,
+          makeLog('Operator confirmed — executing mitigation plan', 'OK'),
+          makeLog('EXECUTING SWAP — session_id=HALL_B → MAIN_STAGE', 'AI'),
+          makeLog('Locking Hall B entry gates 3 & 4...', 'OS'),
+        ),
       };
     });
   },
 
-  _advanceMitigationToSuccess: () => {
+  // ── REDISTRIBUTING ────────────────────────────────────────────────────────
+  advanceToRedistributing: () => {
     set((state) => {
-      if (state.mitigationPhase !== 'PROCESSING') return state;
-
+      if (state.mitigationPhase !== 'EXECUTING') return state;
       const now = Date.now();
+
       const newRooms = state.rooms.map((room) => {
-        if (room.id === 'R3') {
+        if (room.id === 'R3') { // Hall B — emptied out
           return {
             ...room,
-            currentOccupancy: 22,
+            currentOccupancy: 22, // 2 remaining sessions still seated
             status: 'NOMINAL' as const,
+            queueLength: 19,       // still draining
+            waitingExternal: 8,
+            rerouted: 74,          // partial redistribution done
             history: [...room.history, { value: 22, timestamp: now }].slice(-12),
           };
         }
-        if (room.id === 'R1') {
+        if (room.id === 'R2') { // Hall A — receiving
           return {
             ...room,
-            currentOccupancy: 520,
+            currentOccupancy: 196,
             status: 'NOMINAL' as const,
-            history: [...room.history, { value: 520, timestamp: now }].slice(-12),
+            staffAssigned: 5,      // gained 1 staff
+            queueLength: 12,
+            history: [...room.history, { value: 196, timestamp: now }].slice(-12),
+          };
+        }
+        if (room.id === 'R4') { // Expo Floor — receiving
+          return {
+            ...room,
+            currentOccupancy: 540,
+            history: [...room.history, { value: 540, timestamp: now }].slice(-12),
+          };
+        }
+        if (room.id === 'R1') { // Main Stage — small overflow
+          return {
+            ...room,
+            currentOccupancy: 438,
+            staffAssigned: 6,      // lent 2 ushers to Hall B
+            history: [...room.history, { value: 438, timestamp: now }].slice(-12),
           };
         }
         return room;
       });
 
-      const successLog = makeLog('[AI] Mitigation confirmed — breach probability: 0.2%', 'AI');
-      const notifyLog = makeLog('[OS] Attendee notifications dispatched via app push', 'OK');
-
       return {
-        mitigationPhase: 'SUCCESS',
+        mitigationPhase: 'REDISTRIBUTING',
         rooms: newRooms,
-        checkInVelocity: 68, // Dropping back but not fully settled yet
-        logLines: appendLog(appendLog(state.logLines, notifyLog), successLog),
+        checkInVelocity: 112, // still elevated but dropping
+        logLines: appendLog(
+          state.logLines,
+          makeLog('Routing 46 attendees → Hall A (Gate 7)', 'OS'),
+          makeLog('Routing 28 attendees → Expo Floor overflow (Level 2)', 'OS'),
+          makeLog('Routing 3 attendees → Main Stage via Corridor B', 'OS'),
+          makeLog('19 attendees held in queue — awaiting slot release', 'WARN'),
+          makeLog('Ushers reassigned: +2 from Main Stage → Hall B entrance', 'OS'),
+          makeLog('Push notifications dispatched to 96 attendees', 'OK'),
+        ),
       };
     });
   },
 
-  _advanceMitigationToSettled: () => {
+  // ── STABILIZING ──────────────────────────────────────────────────────────
+  advanceToStabilizing: () => {
     set((state) => {
-      if (state.mitigationPhase !== 'SUCCESS') return state;
+      if (state.mitigationPhase !== 'REDISTRIBUTING') return state;
+      const now = Date.now();
 
-      const resolvedAlert: Alert = {
-        id: `A${Date.now()}`,
-        severity: 'RESOLVED',
-        message: 'Hall B sessions migrated to Main Stage. All attendees notified. System nominal.',
-        timestamp: new Date(),
-      };
-
-      const settleLog = makeLog('[OS] System status: NOMINAL — all nodes clear', 'OK');
+      const newRooms = state.rooms.map((room) => {
+        if (room.id === 'R3') {
+          return {
+            ...room,
+            queueLength: 4,
+            waitingExternal: 0,
+            rerouted: 96,
+            history: [...room.history, { value: 22, timestamp: now }].slice(-12),
+          };
+        }
+        if (room.id === 'R2') {
+          return {
+            ...room,
+            queueLength: 3,
+            history: [...room.history, { value: 196, timestamp: now }].slice(-12),
+          };
+        }
+        return room;
+      });
 
       return {
-        mitigationPhase: 'SETTLED',
+        mitigationPhase: 'STABILIZING',
+        rooms: newRooms,
+        checkInVelocity: 68,
+        logLines: appendLog(
+          state.logLines,
+          makeLog('Breach probability: 98% → 4%', 'AI'),
+          makeLog('Hall B occupancy confirmed: 118 → 22 (safe)', 'OK'),
+          makeLog('Queue normalizing: 33 → 19 → 4', 'OS'),
+          makeLog('Hall A accepting overflow — nominal at 65%', 'OS'),
+          makeLog('Expo Floor at 67% — within safe threshold', 'OS'),
+        ),
+      };
+    });
+  },
+
+  // ── MONITORING ────────────────────────────────────────────────────────────
+  advanceToMonitoring: () => {
+    set((state) => {
+      if (state.mitigationPhase !== 'STABILIZING') return state;
+      const now = Date.now();
+
+      const newRooms = state.rooms.map((room) => {
+        if (room.id === 'R3') {
+          return { ...room, queueLength: 0, waitingExternal: 0, status: 'NOMINAL' as const };
+        }
+        return room;
+      });
+
+      const mitigationResult: MitigationResult = {
+        issue: 'Hall B fire-code capacity breach (predicted)',
+        cause: 'Registration surge at gates 3 & 4 — 184 check-ins/min',
+        actionTaken: 'Session swap HALL_B → MAIN_STAGE. Redistribution across 3 zones.',
+        redistribution: REDISTRIB,
+        finalOccupancyByZone: {
+          R3: { name: 'Hall B',      pct: 18 },
+          R2: { name: 'Hall A',      pct: 65 },
+          R4: { name: 'Expo Floor',  pct: 67 },
+          R1: { name: 'Main Stage',  pct: 29 },
+        },
+        stabilizedAt: new Date(now),
+      };
+
+      const resolvedAlert: Alert = {
+        id: `A${now}`,
+        severity: 'RESOLVED',
+        message: 'Hall B sessions fully migrated. All 96 attendees redirected. System nominal.',
+        timestamp: new Date(now),
+      };
+
+      return {
+        mitigationPhase: 'MONITORING',
+        rooms: newRooms,
         checkInVelocity: 45,
         systemStatus: 'NOMINAL',
-        threatResolved: true,
+        mitigationResult,
         alerts: [resolvedAlert, ...state.alerts],
-        logLines: appendLog(state.logLines, settleLog),
+        logLines: appendLog(
+          state.logLines,
+          makeLog('System status: NOMINAL — all sectors clear', 'OK'),
+          makeLog('Mitigation complete. Time to stabilize: 3.5s', 'OK'),
+          makeLog('Entering continuous monitoring mode', 'AI'),
+        ),
       };
     });
   },
