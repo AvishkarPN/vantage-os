@@ -1,0 +1,79 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── User & Access Control ──────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("OPERATOR") // ADMIN, OPERATOR, READ_ONLY
+  password  String   @default("argon2_hash_placeholder")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  auditLogs AuditLog[]
+}
+
+// ─── Venue Topology (Saved Configs) ──────────────────────────────────────────
+
+model Venue {
+  id        String   @id @default(cuid())
+  name      String
+  capacity  Int
+  zones     Zone[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Zone {
+  id        String   @id @default(cuid())
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id])
+  name      String
+  capacity  Int
+  
+  incidentLogs IncidentLog[]
+}
+
+// ─── Operational Logs & Security ─────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  severity  String   @default("LOW") // LOW, MEDIUM, HIGH
+  status    String   @default("SUCCESS")
+  timestamp DateTime @default(now())
+}
+
+model IncidentLog {
+  id             String   @id @default(cuid())
+  zoneId         String
+  zone           Zone     @relation(fields: [zoneId], references: [id])
+  type           String   // SURGE, BREACH, DRIFT
+  message        String
+  mitigationTaken String?
+  resolvedAt     DateTime?
+  createdAt      DateTime @default(now())
+}
+
+// ─── Exports & Reports ───────────────────────────────────────────────────
+
+model Export {
+  id        String   @id @default(cuid())
+  filename  String
+  format    String   // JSON, CSV, PDF
+  user      String?  // Optional operator reference
+  dataHash  String?  // For integrity verification
+  createdAt DateTime @default(now())
+}

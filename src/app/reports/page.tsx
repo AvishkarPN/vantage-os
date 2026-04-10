@@ -11,6 +11,7 @@ import { useSimulationStore } from "@/store/simulationStore";
 import { useStaffStore, ZONE_CONFIGS, getZoneStatus } from "@/store/staffStore";
 import { useResourceStore } from "@/store/resourceStore";
 import { useAuthStore } from "@/store/v2/authStore";
+import { recordExport } from "@/actions/dbActions";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -79,7 +80,7 @@ export default function ReportsPage() {
   const simState = useSimulationStore();
   const staffState = useStaffStore();
   const resourceState = useResourceStore();
-  const { logSecurityAction, canExecuteAction } = useAuthStore();
+  const { logSecurityAction, canExecuteAction, userName } = useAuthStore();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -104,26 +105,33 @@ export default function ReportsPage() {
 
   const handleExportJSON = () => {
     if (!canExecuteAction()) return;
+    const filename = `VantageOS_Live_Snapshot_${Date.now()}.json`;
     exportJSON(buildLiveSnapshot(), "Live_Snapshot");
     logSecurityAction("EXPORT_GENERATED: format=JSON", "MEDIUM");
+    recordExport(filename, "JSON", userName);
   };
 
   const handleExportCSV = () => {
     if (!canExecuteAction()) return;
-    const headers = ["Zone", "Occupancy (%)", "Queue", "Rerouted", "Staff Status"];
+    const headers = ["Zone", "Occupancy", "Capacity", "Fill %", "Queue", "Rerouted", "Staff Status"];
     const rows = simState.rooms.map(r => {
       // @ts-ignore - loose binding for demo
       const sStatus = getZoneStatus(r.name as any, staffState.staff);
+      const fillPct = r.capacity > 0 ? Math.round((r.currentOccupancy / r.capacity) * 100) : 0;
       return [
         r.name,
-        Math.round((r.currentOccupancy / r.capacity) * 100),
+        r.currentOccupancy,
+        r.capacity,
+        `${fillPct}%`,
         r.queueLength,
         r.rerouted,
         sStatus
       ];
     });
+    const filename = `VantageOS_Zone_Status_${Date.now()}.csv`;
     exportCSV(headers, rows, "Zone_Status");
     logSecurityAction("EXPORT_GENERATED: format=CSV", "MEDIUM");
+    recordExport(filename, "CSV", userName);
   };
 
   const handlePrint = () => {
@@ -212,13 +220,13 @@ export default function ReportsPage() {
             <div className="border border-white/10 p-4">
               <h3 className="text-[10px] font-mono text-muted-foreground uppercase mb-2">Staff Coverage Deficit</h3>
               <p className="text-2xl font-mono text-warning">
-                {ZONE_CONFIGS.filter(z => getZoneStatus(z.zone, staffState.staff) === 'critical').length} Zones
+                {ZONE_CONFIGS.filter(z => getZoneStatus(z.zone, staffState.staff) === 'critical').length} Zones <span className="text-[10px] text-muted-foreground">(Critical)</span>
               </p>
             </div>
             <div className="border border-white/10 p-4">
               <h3 className="text-[10px] font-mono text-muted-foreground uppercase mb-2">Resource Shortfalls</h3>
               <p className="text-2xl font-mono text-destructive">
-                {resourceState.resources.filter(r => r.allocated < r.required).length} Critical
+                {resourceState.resources.filter(r => r.allocated < r.required && r.priority === 'critical').length} Critical
               </p>
             </div>
           </div>
@@ -238,10 +246,10 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {simState.rooms.map(r => {
-                  const pct = Math.round((r.currentOccupancy / r.capacity) * 100);
-                  const isHigh = pct > 90;
-                  return (
+                  {simState.rooms.map(r => {
+                    const pct = r.capacity > 0 ? Math.round((r.currentOccupancy / r.capacity) * 100) : 0;
+                    const isHigh = pct > 90;
+                    return (
                     <tr key={r.id} className="border-b border-white/5 last:border-0 text-foreground">
                       <td className="py-2 flex items-center gap-2">
                         {isHigh && <AlertTriangle className="w-3 h-3 text-destructive" />}
@@ -281,11 +289,11 @@ export default function ReportsPage() {
                 <div className="font-mono text-xs">
                   <div className="text-[10px] text-muted-foreground uppercase mb-2 border-b border-primary/20 pb-1">Redistribution Log</div>
                   <ul className="space-y-1 text-foreground">
-                    <li>Moved → Hall A: <span className="text-primary float-right">{mitigationRes.redistribution.movedToHallA}</span></li>
-                    <li>Moved → Expo Floor: <span className="text-primary float-right">{mitigationRes.redistribution.movedToExpo}</span></li>
-                    <li>Held in queue: <span className="text-warning float-right">{mitigationRes.redistribution.heldInQueue}</span></li>
-                    <li>Staff reassigned: <span className="text-primary float-right">2 personnel</span></li>
-                    <li>Notifications sent: <span className="text-foreground float-right">96 devices</span></li>
+                    <li>Moved → Hall A: <span className="text-primary float-right">{mitigationRes.redistribution.movedToHallA} attendees</span></li>
+                    <li>Moved → Expo Floor: <span className="text-primary float-right">{mitigationRes.redistribution.movedToExpo} attendees</span></li>
+                    <li>Held in queue: <span className="text-warning float-right">{mitigationRes.redistribution.heldInQueue} pending</span></li>
+                    <li>Staff reassigned: <span className="text-primary float-right">{mitigationRes.redistribution.staffReassigned} pers.</span></li>
+                    <li>Notifications sent: <span className="text-foreground float-right">{mitigationRes.redistribution.notificationsSent}</span></li>
                   </ul>
                 </div>
               </div>
