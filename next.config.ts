@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // No suppressions — strict mode enforced
 };
 
 export default nextConfig;
