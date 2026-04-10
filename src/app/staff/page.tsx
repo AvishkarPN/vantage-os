@@ -5,7 +5,7 @@ import { useState, useMemo } from "react";
 import {
   Users, Radio, Activity, ServerCrash,
   AlertTriangle, CheckCircle2, ArrowLeftRight,
-  X, ChevronDown,
+  X, ChevronDown, Package
 } from "lucide-react";
 import {
   useStaffStore,
@@ -269,11 +269,11 @@ export default function StaffPage() {
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary" />
             <Users className="w-5 h-5 text-primary" />
           </div>
-          <Link href="/" className="opacity-30 hover:opacity-80 transition-opacity">
-            <Activity className="w-5 h-5" />
+          <Link href="/resources" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Package className="w-5 h-5" />
           </Link>
-          <Link href="/" className="opacity-30 hover:opacity-80 transition-opacity">
-            <ServerCrash className="w-5 h-5" />
+          <Link href="/reports" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Activity className="w-5 h-5" />
           </Link>
         </nav>
         {shortageCount > 0 && (

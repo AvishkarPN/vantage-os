@@ -1,18 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity, Users, AlertTriangle, Radio, Cpu, ShieldAlert,
   CheckCircle2, GitMerge, ServerCrash, ChevronDown, ChevronUp,
-  Zap, ArrowRight, Clock, TrendingDown,
+  Zap, ArrowRight, Clock, TrendingDown, Package
 } from "lucide-react";
 import {
   useSimulationStore,
   type Room, type Alert, type LogLine,
   type MitigationPhase, type MitigationResult,
 } from "@/store/simulationStore";
+import { useResourceStore } from "@/store/resourceStore";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -568,6 +570,13 @@ export default function TacticalNocDashboard() {
     advanceToRedistributing, advanceToStabilizing, advanceToMonitoring,
   ]);
 
+  // Trigger resource shift when redistribution begins
+  useEffect(() => {
+    if (mitigationPhase === 'REDISTRIBUTING') {
+      useResourceStore.getState().triggerMitigationDemand();
+    }
+  }, [mitigationPhase]);
+
   const handleBeginMitigation = useCallback(() => {
     beginMitigation();
   }, [beginMitigation]);
@@ -593,17 +602,25 @@ export default function TacticalNocDashboard() {
 
       {/* ── ICON RAIL ────────────────────────────────────────────── */}
       <aside className="fixed left-0 top-0 bottom-0 w-16 border-r border-white/5 bg-background flex flex-col items-center py-6 gap-7 z-50">
-        <div className="w-8 h-8 bg-primary flex items-center justify-center shrink-0">
-          <span className="font-mono font-bold text-background text-[9px] tracking-tight">VOS</span>
-        </div>
+        <Link href="/">
+          <div className="w-8 h-8 bg-primary flex items-center justify-center shrink-0 cursor-pointer hover:bg-primary/80 transition-colors">
+            <span className="font-mono font-bold text-background text-[9px] tracking-tight">VOS</span>
+          </div>
+        </Link>
         <nav className="flex flex-col items-center gap-6 flex-1 text-muted-foreground">
           <div className="relative w-full flex justify-center">
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary" />
             <Radio className="w-5 h-5 text-primary" />
           </div>
-          <Users    className="w-5 h-5 opacity-30 hover:opacity-80 transition-opacity cursor-pointer" />
-          <Activity className="w-5 h-5 opacity-30 hover:opacity-80 transition-opacity cursor-pointer" />
-          <ServerCrash className="w-5 h-5 opacity-30 hover:opacity-80 transition-opacity cursor-pointer" />
+          <Link href="/staff" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Users className="w-5 h-5" />
+          </Link>
+          <Link href="/resources" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Package className="w-5 h-5" />
+          </Link>
+          <Link href="/reports" className="opacity-30 hover:opacity-80 transition-opacity">
+            <Activity className="w-5 h-5" />
+          </Link>
         </nav>
         <div className={`w-2 h-2 rounded-full shrink-0 ${systemStatus === 'NOMINAL' ? 'bg-primary' : 'bg-destructive animate-pulse'}`} />
       </aside>
