@@ -45,29 +45,84 @@ const SEED_RESOURCES: ResourceItem[] = [
 
 interface ResourceState {
   resources: ResourceItem[];
-  allocateResource: (id: string, amount: number) => void;
-  updateSetupStatus: (id: string, status: SetupStatus) => void;
+  isLoading: boolean;
+  isSynced: boolean;
+  fetchFromDatabase: () => Promise<void>;
+  allocateResource: (id: string, amount: number) => Promise<void>;
+  updateSetupStatus: (id: string, status: SetupStatus) => Promise<void>;
   // Triggered by mitigation to simulate resource redistribution needs
   triggerMitigationDemand: () => void;
 }
 
 export const useResourceStore = create<ResourceState>((set) => ({
   resources: SEED_RESOURCES,
+  isLoading: false,
+  isSynced: false,
 
-  allocateResource: (id, amount) => {
+  fetchFromDatabase: async () => {
+    try {
+      set({ isLoading: true });
+      const res = await fetch('/api/resources');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.resources) && data.resources.length > 0) {
+          const mapped: ResourceItem[] = data.resources.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            category: r.category as ResourceCategory,
+            required: r.required,
+            allocated: r.allocated,
+            zone: (r.zoneName || 'Global') as AssignmentZone | 'Global',
+            priority: r.priority as ResourcePriority,
+            vendor: r.vendor,
+            setupStatus: r.setupStatus as SetupStatus,
+          }));
+          set({ resources: mapped, isSynced: true });
+        }
+      }
+    } catch (err) {
+      console.warn('[ResourceStore] DB fetch fallback to local seed:', err);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  allocateResource: async (id, amount) => {
+    // 1. Optimistic update
     set((state) => ({
       resources: state.resources.map(r =>
         r.id === id ? { ...r, allocated: Math.min(r.required, r.allocated + amount) } : r
       )
     }));
+
+    // 2. Persist to DB
+    try {
+      await fetch('/api/resources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'allocate', resourceId: id, amount })
+      });
+    } catch (err) {
+      console.error('[ResourceStore] Failed to persist allocation to DB:', err);
+    }
   },
 
-  updateSetupStatus: (id, status) => {
+  updateSetupStatus: async (id, status) => {
     set((state) => ({
       resources: state.resources.map(r =>
         r.id === id ? { ...r, setupStatus: status } : r
       )
     }));
+
+    try {
+      await fetch('/api/resources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setupStatus', resourceId: id, setupStatus: status })
+      });
+    } catch (err) {
+      console.error('[ResourceStore] Failed to persist setup status to DB:', err);
+    }
   },
 
   triggerMitigationDemand: () => {

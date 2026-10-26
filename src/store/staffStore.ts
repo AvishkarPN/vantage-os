@@ -89,12 +89,15 @@ const SEED_STAFF: StaffMember[] = [
 interface StaffState {
   staff: StaffMember[];
   swapSourceId: string | null;
+  isLoading: boolean;
+  isSynced: boolean;
 
-  assignStaff: (id: string, zone: AssignmentZone | null) => void;
-  unassignStaff: (id: string) => void;
-  setStaffStatus: (id: string, status: StaffStatus) => void;
+  fetchFromDatabase: () => Promise<void>;
+  assignStaff: (id: string, zone: AssignmentZone | null) => Promise<void>;
+  unassignStaff: (id: string) => Promise<void>;
+  setStaffStatus: (id: string, status: StaffStatus) => Promise<void>;
   initiateSwap: (id: string) => void;
-  completeSwap: (targetId: string) => void;
+  completeSwap: (targetId: string) => Promise<void>;
   cancelSwap: () => void;
 }
 
@@ -103,8 +106,39 @@ interface StaffState {
 export const useStaffStore = create<StaffState>((set, get) => ({
   staff: SEED_STAFF,
   swapSourceId: null,
+  isLoading: false,
+  isSynced: false,
 
-  assignStaff: (id, zone) => {
+  fetchFromDatabase: async () => {
+    try {
+      set({ isLoading: true });
+      const res = await fetch('/api/staff');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.staff) && data.staff.length > 0) {
+          const mapped: StaffMember[] = data.staff.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            initials: s.initials,
+            role: s.role,
+            skills: typeof s.skills === 'string' ? JSON.parse(s.skills) : s.skills,
+            shiftStart: s.shiftStart,
+            shiftEnd: s.shiftEnd,
+            status: s.status as StaffStatus,
+            assignedZone: s.assignedZone as AssignmentZone | null,
+          }));
+          set({ staff: mapped, isSynced: true });
+        }
+      }
+    } catch (err) {
+      console.warn('[StaffStore] DB fetch fallback to local seed:', err);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  assignStaff: async (id, zone) => {
+    // 1. Optimistic Update
     set((state) => ({
       staff: state.staff.map((s) =>
         s.id === id
@@ -112,20 +146,51 @@ export const useStaffStore = create<StaffState>((set, get) => ({
           : s
       ),
     }));
+
+    // 2. Persist to Database
+    try {
+      await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'assign', staffId: id, zoneName: zone })
+      });
+    } catch (err) {
+      console.error('[StaffStore] Failed to persist staff assignment to DB:', err);
+    }
   },
 
-  unassignStaff: (id) => {
+  unassignStaff: async (id) => {
     set((state) => ({
       staff: state.staff.map((s) =>
         s.id === id ? { ...s, assignedZone: null, status: 'unassigned' } : s
       ),
     }));
+
+    try {
+      await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'assign', staffId: id, zoneName: null })
+      });
+    } catch (err) {
+      console.error('[StaffStore] Failed to persist staff unassignment to DB:', err);
+    }
   },
 
-  setStaffStatus: (id, status) => {
+  setStaffStatus: async (id, status) => {
     set((state) => ({
       staff: state.staff.map((s) => (s.id === id ? { ...s, status } : s)),
     }));
+
+    try {
+      await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'status', staffId: id, status })
+      });
+    } catch (err) {
+      console.error('[StaffStore] Failed to persist staff status to DB:', err);
+    }
   },
 
   initiateSwap: (id) => {
@@ -140,7 +205,7 @@ export const useStaffStore = create<StaffState>((set, get) => ({
     }
   },
 
-  completeSwap: (targetId) => {
+  completeSwap: async (targetId) => {
     const { swapSourceId, staff } = get();
     if (!swapSourceId || swapSourceId === targetId) {
       set({ swapSourceId: null });
@@ -152,15 +217,28 @@ export const useStaffStore = create<StaffState>((set, get) => ({
 
     const srcZone = src.assignedZone;
     const tgtZone = tgt.assignedZone;
+    const sourceId = swapSourceId;
 
+    // Optimistic update
     set((state) => ({
       swapSourceId: null,
       staff: state.staff.map((s) => {
-        if (s.id === swapSourceId) return { ...s, assignedZone: tgtZone };
-        if (s.id === targetId)    return { ...s, assignedZone: srcZone };
+        if (s.id === sourceId) return { ...s, assignedZone: tgtZone };
+        if (s.id === targetId) return { ...s, assignedZone: srcZone };
         return s;
       }),
     }));
+
+    // Persist swap transaction to DB
+    try {
+      await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'swap', staffId: sourceId, targetStaffId: targetId })
+      });
+    } catch (err) {
+      console.error('[StaffStore] Failed to persist swap to DB:', err);
+    }
   },
 
   cancelSwap: () => set({ swapSourceId: null }),

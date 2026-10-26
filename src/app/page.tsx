@@ -579,6 +579,7 @@ export default function TacticalNocDashboard() {
   const {
     totalAttendance, checkInVelocity, activeSessions, systemStatus,
     rooms, alerts, logLines, mitigationPhase, mitigationResult,
+    isDbConnected, fetchFromDatabase,
     tickSimulation, triggerCriticalSurge,
     advanceToAnalyzing, advanceToRecommending, beginMitigation,
     advanceToRedistributing, advanceToStabilizing, advanceToMonitoring,
@@ -593,6 +594,11 @@ export default function TacticalNocDashboard() {
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [expandedRoom, setExpandedRoom] = useState<string | null>(null);
   const [velocityFlash, setVelocityFlash] = useState(false);
+
+  // Initial load from Database
+  useEffect(() => {
+    fetchFromDatabase();
+  }, [fetchFromDatabase]);
 
   // Flash KPIs when resolved
   useEffect(() => {
@@ -768,6 +774,12 @@ export default function TacticalNocDashboard() {
               </p>
             </div>
             <div className="text-right flex items-center gap-6">
+              <div className="flex items-center gap-2 border border-primary/30 bg-primary/5 px-2.5 py-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${isDbConnected ? 'bg-primary animate-pulse' : 'bg-warning'}`} />
+                <span className="text-[9px] font-mono text-primary uppercase tracking-wider">
+                  {isDbConnected ? 'DB: CONNECTED [SQLITE]' : 'DB: SYNCING...'}
+                </span>
+              </div>
               <div className="flex flex-col items-end border-r border-white/5 pr-6">
                  <span className="text-[10px] font-sans text-muted-foreground uppercase tracking-widest flex items-center gap-2">
                   <UserIcon className="w-2.5 h-2.5" />

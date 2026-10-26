@@ -149,6 +149,12 @@ interface SimulationState {
   logLines: LogLine[];
   mitigationPhase: MitigationPhase;
   mitigationResult: MitigationResult | null;
+  isDbConnected: boolean;
+  activeIncidentDbId: string | null;
+
+  // DB Sync
+  fetchFromDatabase: () => Promise<void>;
+  syncToDatabase: () => Promise<void>;
 
   // Simulation actions
   tickSimulation: () => void;
@@ -165,12 +171,14 @@ interface SimulationState {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-export const useSimulationStore = create<SimulationState>((set) => ({
+export const useSimulationStore = create<SimulationState>((set, get) => ({
   totalAttendance: 1187,
   checkInVelocity: 42,
   activeSessions: 14,
   systemStatus: 'NOMINAL',
   rooms: INITIAL_ROOMS,
+  isDbConnected: false,
+  activeIncidentDbId: null,
   alerts: [
     {
       id: 'A0',
@@ -182,6 +190,62 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   logLines: INITIAL_LOGS,
   mitigationPhase: 'IDLE',
   mitigationResult: null,
+
+  fetchFromDatabase: async () => {
+    try {
+      const res = await fetch('/api/zones');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.zones) && data.zones.length > 0) {
+          set((state) => {
+            const nextRooms = state.rooms.map((r) => {
+              const matched = data.zones.find((z: any) => z.name === r.name);
+              if (matched) {
+                return {
+                  ...r,
+                  capacity: matched.capacity,
+                  currentOccupancy: matched.currentOccupancy,
+                  status: (matched.status as RoomStatus) || r.status,
+                  queueLength: matched.queueLength ?? r.queueLength,
+                  staffAssigned: matched.staffAssigned ?? r.staffAssigned,
+                  sessionCount: matched.sessionCount ?? r.sessionCount,
+                };
+              }
+              return r;
+            });
+            return {
+              rooms: nextRooms,
+              isDbConnected: true,
+              totalAttendance: nextRooms.reduce((sum, room) => sum + room.currentOccupancy, 0),
+            };
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[SimulationStore] DB fetch fallback:', err);
+    }
+  },
+
+  syncToDatabase: async () => {
+    try {
+      const rooms = get().rooms.map(r => ({
+        name: r.name,
+        currentOccupancy: r.currentOccupancy,
+        status: r.status,
+        queueLength: r.queueLength,
+        waitingExternal: r.waitingExternal,
+        rerouted: r.rerouted,
+        staffAssigned: r.staffAssigned,
+      }));
+      await fetch('/api/zones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rooms })
+      });
+    } catch (err) {
+      console.warn('[SimulationStore] Failed to sync rooms to DB:', err);
+    }
+  },
 
   // ── Simulation tick ──────────────────────────────────────────────────────
   tickSimulation: () => {
@@ -277,6 +341,27 @@ export const useSimulationStore = create<SimulationState>((set) => ({
 
   // ── Crisis: DETECTED ─────────────────────────────────────────────────────
   triggerCriticalSurge: () => {
+    // Persist incident to SQLite database
+    fetch('/api/incidents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zoneName: 'Hall B',
+        type: 'CROWD_SURGE',
+        message: 'Registration surge detected. Predicted fire-code breach in 8 minutes at gates 3 & 4.',
+        severity: 'CRITICAL',
+        predictedImpact: '+14% fire-code breach likelihood',
+        mitigation: 'AUTO-MITIGATE: SWAP SESSIONS'
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.incident?.id) {
+          set({ activeIncidentDbId: data.incident.id });
+        }
+      })
+      .catch(err => console.warn('[SimulationStore] Failed to persist incident to DB:', err));
+
     set((state) => {
       if (state.mitigationPhase !== 'IDLE') return state;
       const now = Date.now();
@@ -357,13 +442,22 @@ export const useSimulationStore = create<SimulationState>((set) => ({
 
   // ── EXECUTING (button click) ──────────────────────────────────────────────
   beginMitigation: () => {
+    const activeIncidentId = get().activeIncidentDbId;
+    if (activeIncidentId) {
+      fetch('/api/mitigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ incidentId: activeIncidentId, operatorName: 'op_alpha' })
+      }).catch(err => console.warn('[SimulationStore] Failed to execute DB mitigation:', err));
+    }
+
     set((state) => {
       if (state.mitigationPhase !== 'RECOMMENDING') return state;
       return {
         mitigationPhase: 'EXECUTING',
         logLines: appendLog(
           state.logLines,
-          makeLog('Operator confirmed — executing mitigation plan', 'OK'),
+          makeLog('Operator confirmed — executing mitigation plan in DB', 'OK'),
           makeLog('EXECUTING SWAP — session_id=HALL_B → MAIN_STAGE', 'AI'),
           makeLog('Locking Hall B entry gates 3 & 4...', 'OS'),
         ),
@@ -525,5 +619,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         ),
       };
     });
+
+    setTimeout(() => {
+      get().syncToDatabase();
+    }, 500);
   },
 }));

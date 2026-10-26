@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Users, Radio, Activity, ServerCrash,
   AlertTriangle, CheckCircle2, ArrowLeftRight,
@@ -229,10 +229,14 @@ function StaffRow({
 
 export default function StaffPage() {
   const {
-    staff, swapSourceId,
+    staff, swapSourceId, isLoading, isSynced,
     assignStaff, unassignStaff, setStaffStatus,
-    initiateSwap, cancelSwap,
+    initiateSwap, cancelSwap, fetchFromDatabase
   } = useStaffStore();
+
+  useEffect(() => {
+    fetchFromDatabase();
+  }, [fetchFromDatabase]);
 
   const [filterStatus, setFilterStatus] = useState<StaffStatus | 'all'>('all');
   const [filterZone,   setFilterZone]   = useState<AssignmentZone | 'all'>('all');
@@ -309,6 +313,12 @@ export default function StaffPage() {
                   </button>
                 </div>
               )}
+              <div className="flex items-center gap-2 border border-primary/30 bg-primary/5 px-2.5 py-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-primary animate-pulse' : 'bg-warning'}`} />
+                <span className="text-[9px] font-mono text-primary uppercase tracking-wider">
+                  {isLoading ? 'SYNCING...' : isSynced ? 'DB PERSISTED' : 'LOCAL FALLBACK'}
+                </span>
+              </div>
               <Link href="/" className="text-[10px] font-mono text-muted-foreground border border-white/10 px-3 py-1.5 hover:border-primary hover:text-primary transition-colors uppercase tracking-widest">
                 ← Control Center
               </Link>

@@ -1,0 +1,67 @@
+name: VantageOS CI / CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-build:
+    name: Build, Test & Validate
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: "file:./dev.db"
+      NODE_ENV: "production"
+      NEXT_TELEMETRY_DISABLED: 1
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js (LTS 20.x)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install Project Dependencies
+        run: |
+          npm install --prefer-offline --no-audit
+
+      - name: 🔍 TypeScript Static Type Check
+        run: |
+          npx tsc --noEmit
+
+      - name: 🧹 ESLint Code Quality Inspection
+        run: |
+          npm run lint
+
+      - name: 🗄️ Generate Prisma Client & Sync Database
+        run: |
+          npx prisma generate
+          npm run db:push
+
+      - name: 🌱 Seed Initial Tactical Dataset
+        run: |
+          npm run db:seed
+
+      - name: 🧪 Execute Automated Integration & Telemetry Tests
+        run: |
+          npm run test:ci
+
+      - name: 🏗️ Compile Optimized Production Build (Webpack)
+        run: |
+          npm run build
+
+      - name: 📊 Post Deployment / CI Success Banner
+        if: success()
+        run: |
+          echo "### 🚀 CI Pipeline Complete" >> $GITHUB_STEP_SUMMARY
+          echo "All static analysis, Prisma DB sync, tactical seed assertions, and Next.js production builds finished successfully." >> $GITHUB_STEP_SUMMARY

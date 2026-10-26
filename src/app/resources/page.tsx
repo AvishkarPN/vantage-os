@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Package, Users, Radio, Activity, ServerCrash,
   AlertTriangle, CheckCircle2, Factory, Zap, ShieldAlert,
@@ -86,7 +86,19 @@ function ShortageSidebar() {
 // ─── List Row ─────────────────────────────────────────────────────────────────
 
 export default function ResourcesPage() {
-  const { resources, allocateResource, updateSetupStatus } = useResourceStore();
+  const {
+    resources,
+    allocateResource,
+    updateSetupStatus,
+    fetchFromDatabase,
+    isLoading,
+    isSynced
+  } = useResourceStore();
+
+  useEffect(() => {
+    fetchFromDatabase();
+  }, [fetchFromDatabase]);
+
   const [filterPriority, setFilterPriority] = useState<ResourcePriority | 'all'>('all');
   const [search, setSearch] = useState('');
 
@@ -148,6 +160,17 @@ export default function ResourcesPage() {
                   <span className="ml-3 text-destructive animate-pulse">⚠ {shortfallCount} SHORTFALL{shortfallCount > 1 ? 'S' : ''} DETECTED</span>
                 )}
               </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 border border-primary/30 bg-primary/5 px-2.5 py-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-primary animate-pulse' : 'bg-warning'}`} />
+                <span className="text-[9px] font-mono text-primary uppercase tracking-wider">
+                  {isLoading ? 'SYNCING...' : isSynced ? 'DB PERSISTED' : 'LOCAL FALLBACK'}
+                </span>
+              </div>
+              <Link href="/" className="text-[10px] font-mono text-muted-foreground border border-white/10 px-3 py-1.5 hover:border-primary hover:text-primary transition-colors uppercase tracking-widest">
+                ← Control Center
+              </Link>
             </div>
           </header>
 

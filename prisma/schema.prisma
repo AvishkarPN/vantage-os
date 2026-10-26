@@ -2,11 +2,12 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "library"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 // ─── User & Access Control ──────────────────────────────────────────────────
@@ -23,57 +24,150 @@ model User {
   auditLogs AuditLog[]
 }
 
-// ─── Venue Topology (Saved Configs) ──────────────────────────────────────────
+// ─── Venue & Zone Topology ──────────────────────────────────────────────────
 
 model Venue {
-  id        String   @id @default(cuid())
-  name      String
-  capacity  Int
-  zones     Zone[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  location    String   @default("Command Center Alpha")
+  capacity    Int
+  healthScore Int      @default(100)
+  zones       Zone[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Zone {
-  id        String   @id @default(cuid())
-  venueId   String
-  venue     Venue    @relation(fields: [venueId], references: [id])
-  name      String
-  capacity  Int
-  
-  incidentLogs IncidentLog[]
+  id               String   @id @default(cuid())
+  venueId          String
+  venue            Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  name             String
+  type             String   @default("HALL") // MAIN_STAGE, EXPO, HALL, QUEUE
+  capacity         Int
+  currentOccupancy Int      @default(0)
+  status           String   @default("NOMINAL") // NOMINAL, WARNING, CRITICAL, DEGRADED
+  queueLength      Int      @default(0)
+  waitingExternal  Int      @default(0)
+  rerouted         Int      @default(0)
+  staffAssigned    Int      @default(0)
+  sessionCount     Int      @default(0)
+  updatedAt        DateTime @default(now()) @updatedAt
+
+  incidentLogs     IncidentLog[]
+  staff            Staff[]
+  resources        Resource[]
+  sessions         Session[]
+}
+
+// ─── Operations & Personnel ─────────────────────────────────────────────────
+
+model Staff {
+  id           String   @id @default(cuid())
+  name         String
+  initials     String
+  role         String   @default("Marshal")
+  skills       String   @default("[]") // JSON string of string array
+  shiftStart   String   @default("08:00")
+  shiftEnd     String   @default("20:00")
+  status       String   @default("active") // unassigned, assigned, checked-in, active, on-break, unavailable
+  assignedZone String?  // Zone name or null
+  zoneId       String?
+  zone         Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Resource {
+  id          String   @id @default(cuid())
+  name        String
+  category    String   @default("Barriers")
+  required    Int      @default(10)
+  allocated   Int      @default(10)
+  zoneName    String   @default("Global")
+  priority    String   @default("normal") // critical, high, normal
+  vendor      String   @default("Internal Supply")
+  setupStatus String   @default("ready")  // pending, in-progress, ready
+  zoneId      String?
+  zone        Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Incidents & Mitigations ────────────────────────────────────────────────
+
+model IncidentLog {
+  id              String   @id @default(cuid())
+  zoneId          String
+  zone            Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneName        String?
+  type            String   // SURGE, BREACH, DRIFT, MEDICAL, TECH_FAILURE, VENDOR_DELAY
+  severity        String   @default("CRITICAL") // INFO, WARNING, CRITICAL, RESOLVED
+  message         String
+  predictedImpact String?
+  mitigationTaken String?
+  status          String   @default("ACTIVE")   // ACTIVE, MITIGATING, RESOLVED
+  resolvedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  recommendations Recommendation[]
+}
+
+model Recommendation {
+  id              String      @id @default(cuid())
+  incidentId      String
+  incident        IncidentLog @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  description     String
+  actionPayload   String      @default("{}") // JSON string
+  confidenceScore Float       @default(0.95)
+  status          String      @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  createdAt       DateTime    @default(now())
+}
+
+// ─── Sessions & Schedules ───────────────────────────────────────────────────
+
+model Session {
+  id             String   @id @default(cuid())
+  zoneId         String
+  zone           Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  speakerName    String
+  speakerRole    String?
+  speakerCompany String?
+  title          String
+  startTime      DateTime
+  endTime        DateTime
+  status         String   @default("SCHEDULED") // SCHEDULED, LIVE, DELAYED, ENDED
+  createdAt      DateTime @default(now())
 }
 
 // ─── Operational Logs & Security ─────────────────────────────────────────────
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  action    String
-  severity  String   @default("LOW") // LOW, MEDIUM, HIGH
-  status    String   @default("SUCCESS")
-  timestamp DateTime @default(now())
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  operatorName String   @default("root_admin")
+  action       String
+  severity     String   @default("LOW") // LOW, MEDIUM, HIGH
+  status       String   @default("SUCCESS")
+  ipMetadata   String?
+  timestamp    DateTime @default(now())
 }
-
-model IncidentLog {
-  id             String   @id @default(cuid())
-  zoneId         String
-  zone           Zone     @relation(fields: [zoneId], references: [id])
-  type           String   // SURGE, BREACH, DRIFT
-  message        String
-  mitigationTaken String?
-  resolvedAt     DateTime?
-  createdAt      DateTime @default(now())
-}
-
-// ─── Exports & Reports ───────────────────────────────────────────────────
 
 model Export {
-  id        String   @id @default(cuid())
-  filename  String
-  format    String   // JSON, CSV, PDF
-  user      String?  // Optional operator reference
-  dataHash  String?  // For integrity verification
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  filename    String
+  format      String   // JSON, CSV, PDF
+  user        String?  // Optional operator reference
+  dataHash    String?  // For integrity verification
+  recordCount Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model SystemMetricSnapshot {
+  id                  String   @id @default(cuid())
+  totalAttendees      Int
+  venueHealthScore    Int
+  criticalAlertsCount Int
+  activeStaffCount    Int
+  timestamp           DateTime @default(now())
 }

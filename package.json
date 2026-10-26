@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "db:push": "prisma db push",
+    "db:seed": "ts-node prisma/seed.ts",
+    "test:ci": "node scripts/verify-deployment.mjs"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
@@ -15,6 +17,10 @@
   "dependencies": {
     "@base-ui/react": "^1.3.0",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@libsql/client": "^0.18.0",
+    "@next/swc-wasm-nodejs": "^16.2.3",
+    "@next/swc-win32-x64-msvc": "^16.2.3",
+    "@prisma/adapter-libsql": "^7.10.1",
     "@prisma/client": "^7.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
