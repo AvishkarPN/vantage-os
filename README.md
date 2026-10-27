@@ -1,4 +1,4 @@
-# VantageOS — AI-Powered Tactical NOC & Operations Center
+# VantageOS — AI-Powered Tactical NOC
 
 > **Mission-Critical Event Command and Control Platform**  
 > High-Density Venue Management · Real-Time Telemetry · Autonomous Neural Mitigation
